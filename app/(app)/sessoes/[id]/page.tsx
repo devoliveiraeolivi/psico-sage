@@ -3,6 +3,7 @@ import { formatDateTime } from '@/lib/utils'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { SessaoTabs, ContextoPacienteSidebar } from '@/components/sessao-tabs'
+import { SessaoActionsBar } from '@/components/sessao-actions'
 
 const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
 
@@ -100,6 +101,13 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
           </Link>
         </div>
       </div>
+
+      {/* Barra de ações para sessões aguardando aprovação */}
+      <SessaoActionsBar
+        sessaoId={id}
+        status={sessao.status}
+        resumo={resumo ?? null}
+      />
 
       {/* Main Content - Tabs + Sidebar */}
       <div className="grid gap-6 lg:grid-cols-3">
