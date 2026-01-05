@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PsicoSage - App Desktop</title>
+    <style>
+        :root {
+            --bg-app: #09090b;
+            --bg-card: #18181b;
+            --bg-muted: #27272a;
+            --border: #3f3f46;
+            --text-primary: #fafafa;
+            --text-muted: #a1a1aa;
+            --accent-red: #ef4444;
+            --accent-green: #22c55e;
+            --accent-blue: #3b82f6;
+            --accent-blue-bg: #172554;
+            --accent-yellow: #eab308;
+            --accent-yellow-bg: #422006;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-app);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout Principal */
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar de Navegação */
+        .nav-sidebar {
+            width: 60px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px 0;
+            gap: 8px;
+        }
+
+        .nav-logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-blue), #8b5cf6);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+
+        .nav-item {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover { background: var(--bg-muted); color: var(--text-primary); }
+        .nav-item.active { background: var(--bg-muted); color: var(--accent-blue); }
+
+        /* Painel Esquerdo - Ficha do Paciente */
+        .patient-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+            max-width: 480px;
+            overflow: hidden;
+        }
+
+        .patient-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+
+        .patient-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .patient-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .patient-meta {
+            display: flex;
+            gap: 12px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-ativo { background: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
+
+        .patient-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .info-item label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .info-item p {
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .info-item.full { grid-column: 1 / -1; }
+
+        /* Timeline / Histórico */
+        .timeline {
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 6px;
+            top: 4px;
+            bottom: 4px;
+            width: 2px;
+            background: var(--border);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 16px;
+            padding-left: 16px;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -16px;
+            top: 6px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--bg-muted);
+            border: 2px solid var(--border);
+        }
+
+        .timeline-item.insight::before { border-color: var(--accent-blue); background: var(--accent-blue); }
+        .timeline-item.marco::before { border-color: var(--accent-green); background: var(--accent-green); }
+        .timeline-item.alerta::before { border-color: var(--accent-yellow); background: var(--accent-yellow); }
+
+        .timeline-date {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .timeline-text {
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+
+        .timeline-tag {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            text-transform: uppercase;
+        }
+
+        .tag-insight { background: var(--accent-blue-bg); color: var(--accent-blue); }
+        .tag-marco { background: rgba(34, 197, 94, 0.2); color: var(--accent-green); }
+
+        /* Painel Direito - Sessão Ativa */
+        .session-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-app);
+        }
+
+        .session-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-card);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .recording-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--accent-red);
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .timer {
+            font-family: monospace;
+            font-size: 1.5rem;
+            color: var(--text-muted);
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.85rem;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+            color: white;
+        }
+
+        .btn-danger:hover { background: #dc2626; }
+
+        .session-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-content: start;
+        }
+
+        .prep-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .prep-card.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .prep-card h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .checklist-item:hover { background: var(--bg-muted); }
+
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--text-muted);
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .checklist-item.checked .checkbox {
+            border-color: var(--accent-green);
+            background: var(--accent-green);
+        }
+
+        .checklist-item.checked .checkbox::after {
+            content: '✓';
+            color: white;
+            font-size: 12px;
+        }
+
+        .checklist-item.checked .checklist-text {
+            color: var(--text-muted);
+            text-decoration: line-through;
+        }
+
+        .checklist-text {
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .ai-suggestion {
+            background: var(--accent-blue-bg);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            padding: 14px;
+            margin-top: 12px;
+        }
+
+        .ai-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent-blue);
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .ai-text {
+            font-style: italic;
+            color: #93c5fd;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .alert-box {
+            background: var(--accent-yellow-bg);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .alert-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent-yellow);
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .alert-text {
+            color: #fef08a;
+            font-size: 0.9rem;
+        }
+
+        /* Footer com input de notas */
+        .session-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-card);
+        }
+
+        .note-input-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .note-input {
+            flex: 1;
+            background: var(--bg-app);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .note-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .note-input::placeholder { color: var(--text-muted); }
+
+        .btn-secondary {
+            background: var(--bg-muted);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover { background: var(--border); }
+
+        /* Sessões Anteriores (mini lista) */
+        .sessions-mini {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .session-mini-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: var(--bg-muted);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .session-mini-item:hover { background: var(--border); }
+
+        .session-mini-date { color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Barra de Navegação -->
+        <nav class="nav-sidebar">
+            <div class="nav-logo">PS</div>
+            <div class="nav-item" title="Dashboard">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </div>
+            <div class="nav-item active" title="Pacientes">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div class="nav-item" title="Agenda">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </div>
+            <div class="nav-item" title="Configurações" style="margin-top: auto;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+        </nav>
+
+        <!-- Painel Esquerdo: Ficha do Paciente -->
+        <aside class="patient-panel">
+            <header class="patient-header">
+                <div class="patient-header-top">
+                    <div>
+                        <h1 class="patient-name">Maria Silva</h1>
+                        <div class="patient-meta">
+                            <span>35 anos</span>
+                            <span>•</span>
+                            <span>Desde Mar/2024</span>
+                        </div>
+                    </div>
+                    <span class="status-badge status-ativo">Ativo</span>
+                </div>
+            </header>
+
+            <div class="patient-body">
+                <!-- Estado Atual -->
+                <section class="section">
+                    <h2 class="section-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Estado Atual
+                    </h2>
+                    <div class="info-card">
+                        <div class="info-grid">
+                            <div class="info-item full">
+                                <label>Síntese</label>
+                                <p>Paciente com TAG, 8 meses de tratamento. Boa evolução com técnicas de respiração. Fase de consolidação.</p>
+                            </div>
+                            <div class="info-item">
+                                <label>Humor</label>
+                                <p>Estável, episódios de ansiedade situacional</p>
+                            </div>
+                            <div class="info-item">
+                                <label>Momento</label>
+                                <p>Fase de consolidação</p>
+                            </div>
+                            <div class="info-item">
+                                <label>Diagnósticos</label>
+                                <p>TAG (F41.1), traços depressivos em remissão</p>
+                            </div>
+                            <div class="info-item">
+                                <label>Padrões</label>
+                                <p>Evitação, catastrofização em redução</p>
+                            </div>
+                            <div class="info-item full">
+                                <label>Conflitos Atuais</label>
+                                <p>Autocobrança no trabalho, relação com mãe</p>
+                            </div>
+                            <div class="info-item full">
+                                <label>Recursos</label>
+                                <p>Corrida, journaling, esposo como suporte</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Histórico Evolutivo -->
+                <section class="section">
+                    <h2 class="section-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        Histórico Evolutivo
+                    </h2>
+                    <div class="timeline">
+                        <div class="timeline-item marco">
+                            <span class="timeline-date">22/10/2024</span>
+                            <span class="timeline-tag tag-marco">Marco</span>
+                            <p class="timeline-text">Primeiro limite estabelecido com chefe</p>
+                        </div>
+                        <div class="timeline-item insight">
+                            <span class="timeline-date">15/10/2024</span>
+                            <span class="timeline-tag tag-insight">Insight</span>
+                            <p class="timeline-text">Percebeu padrão de evitação em reuniões</p>
+                        </div>
+                        <div class="timeline-item">
+                            <span class="timeline-date">08/10/2024</span>
+                            <p class="timeline-text">Humor: ansioso → estável</p>
+                        </div>
+                        <div class="timeline-item">
+                            <span class="timeline-date">01/10/2024</span>
+                            <p class="timeline-text">Concluiu tarefa: diário de pensamentos</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Sessões Anteriores -->
+                <section class="section">
+                    <h2 class="section-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        Sessões Anteriores
+                    </h2>
+                    <div class="sessions-mini">
+                        <div class="session-mini-item">
+                            <span>Sessão 32</span>
+                            <span class="session-mini-date">22/10/2024</span>
+                        </div>
+                        <div class="session-mini-item">
+                            <span>Sessão 31</span>
+                            <span class="session-mini-date">15/10/2024</span>
+                        </div>
+                        <div class="session-mini-item">
+                            <span>Sessão 30</span>
+                            <span class="session-mini-date">08/10/2024</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </aside>
+
+        <!-- Painel Direito: Sessão Ativa -->
+        <main class="session-panel">
+            <header class="session-header">
+                <div class="session-status">
+                    <div class="recording-badge">
+                        <div class="pulse-dot"></div>
+                        Gravando
+                    </div>
+                    <span class="timer">00:32:15</span>
+                </div>
+                <button class="btn btn-danger">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                    Encerrar Sessão
+                </button>
+            </header>
+
+            <div class="session-body">
+                <!-- Pontos a Retomar -->
+                <div class="prep-card">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                        Pontos a Retomar
+                    </h3>
+                    <div class="checklist-item" onclick="toggleCheck(this)">
+                        <div class="checkbox"></div>
+                        <span class="checklist-text">Conflito com a mãe (ficou pendente)</span>
+                    </div>
+                    <div class="checklist-item checked" onclick="toggleCheck(this)">
+                        <div class="checkbox"></div>
+                        <span class="checklist-text">Técnica de respiração 4-7-8 funcionou?</span>
+                    </div>
+                    <div class="checklist-item" onclick="toggleCheck(this)">
+                        <div class="checkbox"></div>
+                        <span class="checklist-text">Qualidade do sono (relatou insônia)</span>
+                    </div>
+                </div>
+
+                <!-- Tarefas Pendentes -->
+                <div class="prep-card">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Tarefas da Semana
+                    </h3>
+                    <div class="checklist-item" onclick="toggleCheck(this)">
+                        <div class="checkbox"></div>
+                        <span class="checklist-text">Diário de pensamentos automáticos</span>
+                    </div>
+                    <div class="checklist-item checked" onclick="toggleCheck(this)">
+                        <div class="checkbox"></div>
+                        <span class="checklist-text">Praticar respiração antes de reuniões</span>
+                    </div>
+                </div>
+
+                <!-- Sugestões da IA -->
+                <div class="prep-card">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/></svg>
+                        Sugestões IA
+                    </h3>
+                    <div class="ai-suggestion">
+                        <div class="ai-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            Pergunta de Abertura
+                        </div>
+                        <p class="ai-text">"Maria, na semana passada você mencionou estar preocupada com a reação da sua mãe. Como foi essa semana em relação a isso?"</p>
+                    </div>
+                    <div class="ai-suggestion" style="margin-top: 8px;">
+                        <div class="ai-label">Validar Progresso</div>
+                        <p class="ai-text">"Você conseguiu usar a técnica de respiração antes das reuniões?"</p>
+                    </div>
+                </div>
+
+                <!-- Alertas -->
+                <div class="prep-card">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        Alertas
+                    </h3>
+                    <div class="alert-box">
+                        <div class="alert-label">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                            Data Importante
+                        </div>
+                        <p class="alert-text">Aniversário de falecimento do pai em 5 dias (10/01)</p>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="session-footer">
+                <div class="note-input-group">
+                    <input type="text" class="note-input" placeholder="Adicionar nota rápida (timestamp automático)...">
+                    <button class="btn btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        Salvar
+                    </button>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        function toggleCheck(el) {
+            el.classList.toggle('checked');
+        }
+
+        // Timer fake
+        let seconds = 32 * 60 + 15;
+        setInterval(() => {
+            seconds++;
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            document.querySelector('.timer').textContent =
+                `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }, 1000);
+    </script>
+</body>
+</html>
