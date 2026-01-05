@@ -300,6 +300,25 @@ export default async function DashboardPage() {
             </div>
           )}
 
+          {/* Resumo da semana */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h2 className="text-sm font-semibold text-gray-900 mb-4">Esta Semana</h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-500">Sessões agendadas</span>
+                <span className="font-medium">{sessoesHoje?.length || 0}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-500">Sessões realizadas</span>
+                <span className="font-medium">0</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-500">Faltas</span>
+                <span className="font-medium">0</span>
+              </div>
+            </div>
+          </div>
+
           {/* Ações rápidas */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Ações Rápidas</h2>
@@ -339,25 +358,6 @@ export default async function DashboardPage() {
                 </div>
                 <span className="text-sm text-gray-700">Ver Pacientes</span>
               </Link>
-            </div>
-          </div>
-
-          {/* Resumo da semana */}
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <h2 className="text-sm font-semibold text-gray-900 mb-4">Esta Semana</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Sessões agendadas</span>
-                <span className="font-medium">{sessoesHoje?.length || 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Sessões realizadas</span>
-                <span className="font-medium">0</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Faltas</span>
-                <span className="font-medium">0</span>
-              </div>
             </div>
           </div>
         </div>
