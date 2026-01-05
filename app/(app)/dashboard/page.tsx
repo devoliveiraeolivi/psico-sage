@@ -256,11 +256,11 @@ export default async function DashboardPage() {
         <div className="space-y-5">
           {/* Validações Pendentes */}
           {sessoesPendentes.length > 0 && (
-            <div className="bg-amber-50 rounded-xl border border-amber-200 p-5">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                  <h2 className="text-sm font-semibold text-amber-800">Validar Resumos</h2>
+                  <h2 className="text-sm font-semibold text-gray-900">Validar Resumos</h2>
                 </div>
                 <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                   {sessoesPendentes.length}
@@ -273,11 +273,11 @@ export default async function DashboardPage() {
                     <Link
                       key={sessao.id}
                       href={`/sessoes/${sessao.id}`}
-                      className="block p-3 rounded-lg bg-white border border-amber-200 hover:border-amber-300 hover:shadow-sm transition-all"
+                      className="block p-3 rounded-lg bg-gray-50 border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-gray-900">{paciente?.nome || 'Paciente'}</span>
-                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                         </svg>
                       </div>
@@ -292,7 +292,7 @@ export default async function DashboardPage() {
               {sessoesPendentes.length > 3 && (
                 <Link
                   href="/sessoes"
-                  className="block mt-3 text-center text-xs font-medium text-amber-700 hover:text-amber-800"
+                  className="block mt-3 text-center text-xs font-medium text-amber-600 hover:text-amber-700"
                 >
                   Ver todas ({sessoesPendentes.length}) →
                 </Link>
