@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PsicoSage</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #fafafa;
+            color: #1a1a1a;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar minimalista */
+        .sidebar {
+            width: 240px;
+            background: #fff;
+            border-right: 1px solid #e5e5e5;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 32px;
+            padding: 0 8px;
+        }
+
+        .nav-section {
+            margin-bottom: 24px;
+        }
+
+        .nav-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 0 8px;
+            margin-bottom: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 8px;
+            border-radius: 6px;
+            color: #666;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .nav-item:hover { background: #f5f5f5; color: #1a1a1a; }
+        .nav-item.active { background: #f0f0f0; color: #1a1a1a; font-weight: 500; }
+
+        .nav-item svg { width: 18px; height: 18px; opacity: 0.7; }
+
+        /* Área principal */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header com status da sessão */
+        .header {
+            padding: 16px 32px;
+            border-bottom: 1px solid #e5e5e5;
+            background: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .patient-name {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .session-meta {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .recording-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #fef2f2;
+            color: #dc2626;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .rec-dot {
+            width: 8px;
+            height: 8px;
+            background: #dc2626;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: none;
+        }
+
+        .btn-outline {
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            color: #666;
+        }
+
+        .btn-outline:hover { border-color: #ccc; color: #1a1a1a; }
+
+        .btn-danger {
+            background: #dc2626;
+            color: #fff;
+        }
+
+        .btn-danger:hover { background: #b91c1c; }
+
+        /* Content area */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px;
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 32px;
+        }
+
+        /* Cards */
+        .card {
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .card-badge {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        /* Lista de pontos */
+        .point-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .point-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .point-item:hover { background: #fafafa; }
+
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .point-item.done .checkbox {
+            background: #22c55e;
+            border-color: #22c55e;
+        }
+
+        .point-item.done .checkbox::after {
+            content: '✓';
+            color: #fff;
+            font-size: 12px;
+        }
+
+        .point-item.done .point-text {
+            color: #999;
+            text-decoration: line-through;
+        }
+
+        .point-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        /* Sugestão IA */
+        .ai-card {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 1px solid #bae6fd;
+        }
+
+        .ai-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #0284c7;
+            margin-bottom: 12px;
+        }
+
+        .ai-text {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #0c4a6e;
+            font-style: italic;
+        }
+
+        /* Alerta */
+        .alert-card {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+        }
+
+        .alert-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #b45309;
+            margin-bottom: 8px;
+        }
+
+        .alert-text {
+            font-size: 13px;
+            color: #92400e;
+        }
+
+        /* Painel lateral - Contexto do paciente */
+        .context-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .context-card {
+            background: #fff;
+            border: 1px solid #e5e5e5;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .context-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .context-content {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag {
+            font-size: 12px;
+            padding: 4px 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            color: #666;
+        }
+
+        /* Timeline minimalista */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 12px;
+            font-size: 13px;
+        }
+
+        .timeline-date {
+            color: #999;
+            width: 70px;
+            flex-shrink: 0;
+        }
+
+        .timeline-text {
+            color: #333;
+        }
+
+        .timeline-tag {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-left: 8px;
+        }
+
+        .tag-insight { background: #dbeafe; color: #1d4ed8; }
+        .tag-marco { background: #dcfce7; color: #16a34a; }
+
+        /* Footer com input */
+        .footer {
+            padding: 16px 32px;
+            border-top: 1px solid #e5e5e5;
+            background: #fff;
+        }
+
+        .note-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .note-input:focus {
+            border-color: #3b82f6;
+        }
+
+        .note-input::placeholder {
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">PsicoSage</div>
+
+            <nav class="nav-section">
+                <div class="nav-label">Menu</div>
+                <div class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Dashboard
+                </div>
+                <div class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                    Pacientes
+                </div>
+                <div class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Agenda
+                </div>
+            </nav>
+
+            <nav class="nav-section" style="margin-top: auto;">
+                <div class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"/></svg>
+                    Configurações
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <!-- Header -->
+            <header class="header">
+                <div class="session-info">
+                    <div>
+                        <div class="patient-name">Maria Silva</div>
+                        <div class="session-meta">Sessão 33 · 50 min</div>
+                    </div>
+                    <div class="recording-pill">
+                        <div class="rec-dot"></div>
+                        <span id="timer">00:12:45</span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-outline">Ver ficha completa</button>
+                    <button class="btn btn-danger">Encerrar</button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="content">
+                <div style="display: flex; flex-direction: column; gap: 24px;">
+                    <!-- Pontos principais -->
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">Pontos para hoje</span>
+                            <span class="card-badge">3 itens</span>
+                        </div>
+                        <div class="point-list">
+                            <div class="point-item" onclick="this.classList.toggle('done')">
+                                <div class="checkbox"></div>
+                                <span class="point-text">Retomar conflito com a mãe — ficou pendente da última sessão</span>
+                            </div>
+                            <div class="point-item done" onclick="this.classList.toggle('done')">
+                                <div class="checkbox"></div>
+                                <span class="point-text">Verificar se usou técnica de respiração 4-7-8</span>
+                            </div>
+                            <div class="point-item" onclick="this.classList.toggle('done')">
+                                <div class="checkbox"></div>
+                                <span class="point-text">Qualidade do sono — relatou insônia na semana passada</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sugestão IA -->
+                    <div class="card ai-card">
+                        <div class="ai-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3Z"/></svg>
+                            Sugestão de abertura
+                        </div>
+                        <p class="ai-text">"Maria, na semana passada você mencionou estar preocupada com a reação da sua mãe. Como foi essa semana em relação a isso?"</p>
+                    </div>
+
+                    <!-- Alerta -->
+                    <div class="card alert-card">
+                        <div class="alert-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            Atenção
+                        </div>
+                        <p class="alert-text">Aniversário de falecimento do pai em 5 dias</p>
+                    </div>
+                </div>
+
+                <!-- Painel lateral -->
+                <div class="context-panel">
+                    <div class="context-card">
+                        <div class="context-title">Momento atual</div>
+                        <p class="context-content">Fase de consolidação. Boa evolução com técnicas de respiração.</p>
+                    </div>
+
+                    <div class="context-card">
+                        <div class="context-title">Temas em foco</div>
+                        <div class="tag-list">
+                            <span class="tag">Ansiedade</span>
+                            <span class="tag">Trabalho</span>
+                            <span class="tag">Família</span>
+                        </div>
+                    </div>
+
+                    <div class="context-card">
+                        <div class="context-title">Últimas sessões</div>
+                        <div class="timeline">
+                            <div class="timeline-item">
+                                <span class="timeline-date">22/10</span>
+                                <span class="timeline-text">Limite com chefe<span class="timeline-tag tag-marco">marco</span></span>
+                            </div>
+                            <div class="timeline-item">
+                                <span class="timeline-date">15/10</span>
+                                <span class="timeline-text">Padrão de evitação<span class="timeline-tag tag-insight">insight</span></span>
+                            </div>
+                            <div class="timeline-item">
+                                <span class="timeline-date">08/10</span>
+                                <span class="timeline-text">Humor melhorou</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <footer class="footer">
+                <input type="text" class="note-input" placeholder="Adicionar nota rápida... (salva com timestamp automático)">
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        // Timer
+        let seconds = 12 * 60 + 45;
+        setInterval(() => {
+            seconds++;
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            document.getElementById('timer').textContent =
+                `00:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }, 1000);
+    </script>
+</body>
+</html>
