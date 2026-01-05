@@ -1,5 +1,5 @@
-import { formatTime, formatDate } from '@/lib/utils'
-import { mockSessoesHoje, mockPacientes } from '@/lib/mocks'
+import { formatTime, formatDate, formatDateTime } from '@/lib/utils'
+import { mockSessoesHoje, mockPacientes, mockSessoes } from '@/lib/mocks'
 import Link from 'next/link'
 
 const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -8,6 +8,8 @@ export default async function DashboardPage() {
   let sessoesHoje = mockSessoesHoje
   let totalPacientes = mockPacientes.filter(p => p.status === 'ativo').length
   let proximaSessao = sessoesHoje[0]
+  let sessoesPendentes = mockSessoes.filter(s => s.status === 'aguardando_aprovacao')
+  let pacientes = mockPacientes
 
   if (!useMocks) {
     const { createClient } = await import('@/lib/supabase/server')
@@ -23,10 +25,25 @@ export default async function DashboardPage() {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'ativo')
 
+    const { data: pending } = await supabase
+      .from('sessoes')
+      .select('*')
+      .eq('status', 'aguardando_aprovacao')
+      .order('data_hora', { ascending: false })
+      .limit(5)
+
+    const { data: p } = await supabase
+      .from('pacientes')
+      .select('id, nome')
+
     sessoesHoje = data || []
     totalPacientes = count || 0
     proximaSessao = sessoesHoje[0]
+    sessoesPendentes = pending || []
+    pacientes = p || []
   }
+
+  const pacienteMap = new Map(pacientes.map(p => [p.id, p]))
 
   const hoje = new Date()
   const saudacao = hoje.getHours() < 12 ? 'Bom dia' : hoje.getHours() < 18 ? 'Boa tarde' : 'Boa noite'
@@ -188,6 +205,52 @@ export default async function DashboardPage() {
 
         {/* Coluna lateral */}
         <div className="space-y-5">
+          {/* Validações Pendentes */}
+          {sessoesPendentes.length > 0 && (
+            <div className="bg-amber-50 rounded-xl border border-amber-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                  <h2 className="text-sm font-semibold text-amber-800">Validar Resumos</h2>
+                </div>
+                <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                  {sessoesPendentes.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {sessoesPendentes.slice(0, 3).map((sessao) => {
+                  const paciente = pacienteMap.get(sessao.paciente_id)
+                  return (
+                    <Link
+                      key={sessao.id}
+                      href={`/sessoes/${sessao.id}`}
+                      className="block p-3 rounded-lg bg-white border border-amber-200 hover:border-amber-300 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-900">{paciente?.nome || 'Paciente'}</span>
+                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {'numero_sessao' in sessao && sessao.numero_sessao && `Sessão ${sessao.numero_sessao} · `}
+                        {formatDate(sessao.data_hora)}
+                      </p>
+                    </Link>
+                  )
+                })}
+              </div>
+              {sessoesPendentes.length > 3 && (
+                <Link
+                  href="/sessoes"
+                  className="block mt-3 text-center text-xs font-medium text-amber-700 hover:text-amber-800"
+                >
+                  Ver todas ({sessoesPendentes.length}) →
+                </Link>
+              )}
+            </div>
+          )}
+
           {/* Ações rápidas */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Ações Rápidas</h2>

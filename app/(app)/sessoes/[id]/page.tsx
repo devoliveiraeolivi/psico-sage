@@ -2,7 +2,7 @@ import { mockSessoes, mockSessoesHoje, mockPacientes } from '@/lib/mocks'
 import { formatDateTime } from '@/lib/utils'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { SessaoTabs } from '@/components/sessao-tabs'
+import { SessaoTabs, ContextoPacienteSidebar } from '@/components/sessao-tabs'
 
 const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
 
@@ -101,15 +101,29 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {/* Main Content with Tabs */}
-      <SessaoTabs
-        preparacao={preparacao ?? null}
-        resumo={resumo ?? null}
-        integra={'integra' in sessao ? sessao.integra ?? null : null}
-        jaRealizada={jaRealizada}
-        pacienteResumo={pacienteResumo}
-        pacienteHistorico={paciente?.historico}
-      />
+      {/* Main Content - Tabs + Sidebar */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Tabs - coluna principal */}
+        <div className="lg:col-span-2">
+          <SessaoTabs
+            preparacao={preparacao ?? null}
+            resumo={resumo ?? null}
+            integra={'integra' in sessao ? sessao.integra ?? null : null}
+            jaRealizada={jaRealizada}
+          />
+        </div>
+
+        {/* Sidebar - Contexto do Paciente */}
+        <div className="space-y-4">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1">
+            Contexto do Paciente
+          </div>
+          <ContextoPacienteSidebar
+            pacienteResumo={pacienteResumo}
+            pacienteHistorico={paciente?.historico}
+          />
+        </div>
+      </div>
     </div>
   )
 }
