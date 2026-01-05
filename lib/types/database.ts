@@ -259,6 +259,44 @@ export interface SessaoResumo {
 }
 
 // ============================================
+// TIPOS DE TODOS (TAREFAS E ALERTAS)
+// ============================================
+
+export type TodoTipo = 'tarefa' | 'alerta'
+export type TodoResponsavel = 'psico' | 'ia' | 'sistema'
+export type TodoDestinatario = 'psico' | 'paciente'
+export type TodoPrioridade = 'baixa' | 'normal' | 'alta' | 'urgente'
+export type TodoStatus = 'pendente' | 'em_andamento' | 'concluida' | 'cancelada' | 'arquivada'
+
+// Tarefa: psico/ia cria → paciente executa (aparece na página do paciente)
+// Alerta: ia/sistema cria → psico vê (aparece no dashboard)
+export interface Todo {
+  id: string
+  user_id: string // terapeuta owner
+  paciente_id: string | null // relacionado a qual paciente
+  sessao_id: string | null // gerado de qual sessão (se aplicável)
+
+  tipo: TodoTipo
+  responsavel: TodoResponsavel // quem criou
+  destinatario: TodoDestinatario // para quem
+
+  titulo: string
+  descricao: string | null
+
+  prioridade: TodoPrioridade
+  status: TodoStatus
+
+  data_limite: string | null // prazo (ISO date)
+  data_conclusao: string | null // quando foi concluída
+
+  created_at: string
+  updated_at: string
+}
+
+export type NovoTodo = Omit<Todo, 'id' | 'created_at' | 'updated_at'>
+export type AtualizaTodo = Partial<Omit<Todo, 'id' | 'user_id' | 'created_at'>>
+
+// ============================================
 // TIPOS AUXILIARES
 // ============================================
 

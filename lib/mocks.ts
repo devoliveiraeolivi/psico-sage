@@ -1,5 +1,5 @@
 // Dados mockados para desenvolvimento/preview
-import type { Paciente, Sessao, SessaoHoje } from '@/lib/types'
+import type { Paciente, Sessao, SessaoHoje, Todo } from '@/lib/types'
 
 export const mockPacientes: Paciente[] = [
   {
@@ -251,5 +251,117 @@ Maria: Foi bem! Consegui apresentar minhas ideias sem travar. Ele até elogiou m
     deleted_at: null,
     created_at: '2024-10-22T08:00:00Z',
     updated_at: '2024-10-22T10:00:00Z',
+  },
+]
+
+// ============================================
+// TODOS (ALERTAS E TAREFAS)
+// ============================================
+
+export const mockTodos: Todo[] = [
+  // ALERTAS (ia/sistema → psico)
+  {
+    id: 'alert-1',
+    user_id: 'user-1',
+    paciente_id: '2',
+    sessao_id: null,
+    tipo: 'alerta',
+    responsavel: 'ia',
+    destinatario: 'psico',
+    titulo: 'Aniversário do pai em 5 dias',
+    descricao: 'João Santos - Data significativa de luto. Considerar preparação emocional para a sessão.',
+    prioridade: 'alta',
+    status: 'pendente',
+    data_limite: hojeStr,
+    data_conclusao: null,
+    created_at: '2024-10-25T08:00:00Z',
+    updated_at: '2024-10-25T08:00:00Z',
+  },
+  {
+    id: 'alert-2',
+    user_id: 'user-1',
+    paciente_id: '1',
+    sessao_id: 's-pending-1',
+    tipo: 'alerta',
+    responsavel: 'ia',
+    destinatario: 'psico',
+    titulo: 'Resumo aguardando validação',
+    descricao: 'Maria Silva - Sessão 33 processada. Revisar resumo gerado pela IA.',
+    prioridade: 'normal',
+    status: 'pendente',
+    data_limite: null,
+    data_conclusao: null,
+    created_at: '2024-10-28T10:00:00Z',
+    updated_at: '2024-10-28T10:00:00Z',
+  },
+  {
+    id: 'alert-3',
+    user_id: 'user-1',
+    paciente_id: '2',
+    sessao_id: 's-pending-2',
+    tipo: 'alerta',
+    responsavel: 'ia',
+    destinatario: 'psico',
+    titulo: 'Sessão emocionalmente intensa',
+    descricao: 'João Santos - Paciente chorou pela primeira vez sobre a perda. Monitorar nas próximas sessões.',
+    prioridade: 'alta',
+    status: 'pendente',
+    data_limite: null,
+    data_conclusao: null,
+    created_at: '2024-10-27T15:00:00Z',
+    updated_at: '2024-10-27T15:00:00Z',
+  },
+
+  // TAREFAS (psico/ia → paciente)
+  {
+    id: 'task-1',
+    user_id: 'user-1',
+    paciente_id: '1',
+    sessao_id: 's1',
+    tipo: 'tarefa',
+    responsavel: 'psico',
+    destinatario: 'paciente',
+    titulo: 'Manter diário de pensamentos',
+    descricao: 'Registrar pensamentos automáticos quando sentir ansiedade. Anotar situação, pensamento e emoção.',
+    prioridade: 'normal',
+    status: 'em_andamento',
+    data_limite: null,
+    data_conclusao: null,
+    created_at: '2024-10-22T10:00:00Z',
+    updated_at: '2024-10-22T10:00:00Z',
+  },
+  {
+    id: 'task-2',
+    user_id: 'user-1',
+    paciente_id: '1',
+    sessao_id: 's1',
+    tipo: 'tarefa',
+    responsavel: 'psico',
+    destinatario: 'paciente',
+    titulo: 'Praticar respiração 4-7-8',
+    descricao: 'Fazer exercício de respiração pelo menos 1x ao dia, especialmente antes de situações estressantes.',
+    prioridade: 'normal',
+    status: 'em_andamento',
+    data_limite: null,
+    data_conclusao: null,
+    created_at: '2024-10-22T10:00:00Z',
+    updated_at: '2024-10-22T10:00:00Z',
+  },
+  {
+    id: 'task-3',
+    user_id: 'user-1',
+    paciente_id: '2',
+    sessao_id: 's-pending-2',
+    tipo: 'tarefa',
+    responsavel: 'ia',
+    destinatario: 'paciente',
+    titulo: 'Ritual de despedida no aniversário',
+    descricao: 'Preparar um ritual simbólico para o dia do aniversário do pai - pode ser visitar o túmulo, acender vela, ou escrever.',
+    prioridade: 'alta',
+    status: 'pendente',
+    data_limite: '2024-11-15',
+    data_conclusao: null,
+    created_at: '2024-10-27T15:00:00Z',
+    updated_at: '2024-10-27T15:00:00Z',
   },
 ]
