@@ -1,17 +1,25 @@
-import { createClient } from '@/lib/supabase/server'
 import { statusPacienteColors, statusPacienteLabels } from '@/lib/utils'
+import { mockPacientes } from '@/lib/mocks'
 import Link from 'next/link'
 
+const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
+
 export default async function PacientesPage() {
-  const supabase = await createClient()
+  let pacientes = mockPacientes
 
-  const { data: pacientes, error } = await supabase
-    .from('pacientes')
-    .select('*')
-    .order('nome', { ascending: true })
+  if (!useMocks) {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
 
-  if (error) {
-    console.error('Erro ao buscar pacientes:', error)
+    const { data, error } = await supabase
+      .from('pacientes')
+      .select('*')
+      .order('nome', { ascending: true })
+
+    if (error) {
+      console.error('Erro ao buscar pacientes:', error)
+    }
+    pacientes = data || []
   }
 
   return (

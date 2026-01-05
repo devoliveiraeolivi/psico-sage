@@ -1,21 +1,31 @@
-import { createClient } from '@/lib/supabase/server'
 import { formatTime } from '@/lib/utils'
+import { mockSessoesHoje, mockPacientes } from '@/lib/mocks'
 import Link from 'next/link'
 
+// Detecta se está em modo mock (sem Supabase configurado)
+const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
+
 export default async function DashboardPage() {
-  const supabase = await createClient()
+  let sessoesHoje = mockSessoesHoje
+  let totalPacientes = mockPacientes.filter(p => p.status === 'ativo').length
 
-  // Busca sessões de hoje
-  const { data: sessoesHoje } = await supabase
-    .from('sessoes_hoje')
-    .select('*')
-    .order('data_hora', { ascending: true })
+  if (!useMocks) {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
 
-  // Busca pacientes ativos para contagem
-  const { count: totalPacientes } = await supabase
-    .from('pacientes')
-    .select('*', { count: 'exact', head: true })
-    .eq('status', 'ativo')
+    const { data } = await supabase
+      .from('sessoes_hoje')
+      .select('*')
+      .order('data_hora', { ascending: true })
+
+    const { count } = await supabase
+      .from('pacientes')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'ativo')
+
+    sessoesHoje = data || []
+    totalPacientes = count || 0
+  }
 
   return (
     <div className="space-y-8">

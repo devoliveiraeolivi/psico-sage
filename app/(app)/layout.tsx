@@ -1,17 +1,22 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+
+const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  // Em modo mock, não verifica autenticação
+  if (!useMocks) {
+    const { createClient } = await import('@/lib/supabase/server')
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/login')
+    if (!user) {
+      redirect('/login')
+    }
   }
 
   return (

@@ -1,7 +1,12 @@
-import { type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { type NextRequest, NextResponse } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // Em modo mock (sem Supabase), permite acesso direto
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return NextResponse.next()
+  }
+
+  const { updateSession } = await import('@/lib/supabase/middleware')
   return await updateSession(request)
 }
 
