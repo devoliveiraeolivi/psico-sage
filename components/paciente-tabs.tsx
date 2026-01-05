@@ -392,7 +392,7 @@ function InfoCard({
         <div className={`w-7 h-7 rounded-md ${iconBg} flex items-center justify-center`}>
           <span className={iconColor}>{icon}</span>
         </div>
-        <span className="text-base font-bold text-gray-800">{label}</span>
+        <span className="text-sm font-semibold text-gray-600">{label}</span>
       </div>
       <p className="text-sm text-gray-600 pl-9">{value}</p>
     </div>
