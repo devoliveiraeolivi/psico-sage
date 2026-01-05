@@ -20,10 +20,10 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <aside className="w-60 bg-white border-r border-border/60 flex flex-col">
+      {/* Sidebar escura */}
+      <aside className="w-60 bg-slate-900 flex flex-col">
         <div className="p-6">
-          <Link href="/dashboard" className="text-base font-semibold text-foreground">
+          <Link href="/dashboard" className="text-base font-semibold text-white">
             PsicoSage
           </Link>
         </div>
@@ -36,7 +36,7 @@ export default async function AppLayout({
           </div>
         </nav>
 
-        <div className="p-3 border-t border-border/60">
+        <div className="p-3 border-t border-slate-700/50">
           <NavItem href="/configuracoes" icon={<ConfigIcon />}>Configurações</NavItem>
         </div>
       </aside>
@@ -55,9 +55,9 @@ function NavItem({ href, icon, children }: { href: string; icon: React.ReactNode
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
     >
-      <span className="text-muted-foreground/70">{icon}</span>
+      <span className="text-slate-500">{icon}</span>
       {children}
     </Link>
   )
