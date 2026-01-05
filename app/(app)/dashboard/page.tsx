@@ -1,4 +1,4 @@
-import { formatTime, formatDate, formatDateTime } from '@/lib/utils'
+import { formatTime, formatDate } from '@/lib/utils'
 import { mockSessoesHoje, mockPacientes, mockSessoes } from '@/lib/mocks'
 import Link from 'next/link'
 
@@ -47,6 +47,9 @@ export default async function DashboardPage() {
 
   const hoje = new Date()
   const saudacao = hoje.getHours() < 12 ? 'Bom dia' : hoje.getHours() < 18 ? 'Boa tarde' : 'Boa noite'
+
+  // Sessões com alertas
+  const sessoesComAlertas = sessoesHoje?.filter(s => s.preparacao?.alertas && s.preparacao.alertas.length > 0) || []
 
   return (
     <div className="space-y-8">
@@ -106,134 +109,151 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Sessões do dia - coluna principal */}
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-900">Sessões de Hoje</h2>
-            <Link href="/agenda" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
-              Ver agenda →
-            </Link>
-          </div>
+        {/* Coluna principal */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Alertas do Dia */}
+          {sessoesComAlertas.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                  </svg>
+                  <h2 className="text-sm font-semibold text-gray-900">Alertas do Dia</h2>
+                  <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                    {sessoesComAlertas.length}
+                  </span>
+                </div>
+                {sessoesComAlertas.length > 3 && (
+                  <Link href="/agenda" className="text-sm text-amber-600 hover:text-amber-700 transition-colors">
+                    Ver todos →
+                  </Link>
+                )}
+              </div>
 
-          {sessoesHoje && sessoesHoje.length > 0 ? (
-            <div className="space-y-3">
-              {sessoesHoje.map((sessao, index) => {
-                const isProxima = index === 0
-                const resumo = sessao.paciente_resumo || {}
-                const preparacao = sessao.preparacao
-
-                return (
+              <div className="space-y-3">
+                {sessoesComAlertas.slice(0, 3).map((sessao) => (
                   <Link
                     key={sessao.id}
                     href={`/sessoes/${sessao.id}`}
-                    className={`block bg-white rounded-xl border ${isProxima ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-200'} p-5 hover:shadow-md transition-all`}
+                    className="block bg-amber-50 rounded-xl border border-amber-200 p-4 hover:shadow-md hover:border-amber-300 transition-all"
                   >
                     <div className="flex items-start gap-4">
-                      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-sm font-semibold text-blue-700">
-                          {sessao.paciente_nome.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                        </span>
+                      <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
                       </div>
-
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 mb-1">
                           <span className="font-medium text-gray-900">{sessao.paciente_nome}</span>
                           <span className="text-sm text-gray-500">{formatTime(sessao.data_hora)}</span>
-                          {isProxima && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                              Próxima
-                            </span>
-                          )}
                         </div>
-
-                        {resumo.momento && (
-                          <p className="text-sm text-gray-500 mb-2">{resumo.momento}</p>
-                        )}
-
-                        {/* Pontos principais da preparação */}
-                        {preparacao?.pontos_retomar && preparacao.pontos_retomar.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {preparacao.pontos_retomar.slice(0, 2).map((ponto, i) => (
-                              <span key={i} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                                {ponto.length > 40 ? ponto.slice(0, 40) + '...' : ponto}
-                              </span>
-                            ))}
-                            {preparacao.pontos_retomar.length > 2 && (
-                              <span className="text-xs text-gray-400">
-                                +{preparacao.pontos_retomar.length - 2}
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Alerta se houver */}
-                        {preparacao?.alertas && preparacao.alertas.length > 0 && (
-                          <div className="mt-3 flex items-center gap-2 text-xs text-amber-700">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                            </svg>
-                            {preparacao.alertas[0]}
-                          </div>
-                        )}
+                        {sessao.preparacao?.alertas?.map((alerta, i) => (
+                          <p key={i} className="text-sm text-amber-800">{alerta}</p>
+                        ))}
                       </div>
-
-                      <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <svg className="w-5 h-5 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                       </svg>
                     </div>
                   </Link>
-                )
-              })}
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-gray-200 px-5 py-12 text-center">
-              <div className="w-12 h-12 rounded-full bg-gray-100 mx-auto mb-4 flex items-center justify-center">
-                <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                </svg>
+                ))}
               </div>
-              <p className="text-gray-500">Nenhuma sessão agendada para hoje</p>
-              <Link
-                href="/agenda/nova"
-                className="inline-flex items-center gap-2 mt-4 text-sm text-primary hover:underline"
-              >
-                Agendar sessão
-              </Link>
             </div>
           )}
+
+          {/* Sessões de Hoje */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-gray-900">Sessões de Hoje</h2>
+              {sessoesHoje && sessoesHoje.length > 3 && (
+                <Link href="/agenda" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+                  Ver todas →
+                </Link>
+              )}
+            </div>
+
+            {sessoesHoje && sessoesHoje.length > 0 ? (
+              <div className="space-y-3">
+                {sessoesHoje.slice(0, 3).map((sessao, index) => {
+                  const isProxima = index === 0
+                  const resumo = sessao.paciente_resumo || {}
+                  const preparacao = sessao.preparacao
+
+                  return (
+                    <Link
+                      key={sessao.id}
+                      href={`/sessoes/${sessao.id}`}
+                      className={`block bg-white rounded-xl border ${isProxima ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-200'} p-5 hover:shadow-md transition-all`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-semibold text-blue-700">
+                            {sessao.paciente_nome.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-1">
+                            <span className="font-medium text-gray-900">{sessao.paciente_nome}</span>
+                            <span className="text-sm text-gray-500">{formatTime(sessao.data_hora)}</span>
+                            {isProxima && (
+                              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+                                Próxima
+                              </span>
+                            )}
+                          </div>
+
+                          {resumo.momento && (
+                            <p className="text-sm text-gray-500 mb-2">{resumo.momento}</p>
+                          )}
+
+                          {preparacao?.pontos_retomar && preparacao.pontos_retomar.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {preparacao.pontos_retomar.slice(0, 2).map((ponto, i) => (
+                                <span key={i} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
+                                  {ponto.length > 40 ? ponto.slice(0, 40) + '...' : ponto}
+                                </span>
+                              ))}
+                              {preparacao.pontos_retomar.length > 2 && (
+                                <span className="text-xs text-gray-400">
+                                  +{preparacao.pontos_retomar.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 px-5 py-12 text-center">
+                <div className="w-12 h-12 rounded-full bg-gray-100 mx-auto mb-4 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                  </svg>
+                </div>
+                <p className="text-gray-500">Nenhuma sessão agendada para hoje</p>
+                <Link
+                  href="/agenda/nova"
+                  className="inline-flex items-center gap-2 mt-4 text-sm text-primary hover:underline"
+                >
+                  Agendar sessão
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Coluna lateral */}
         <div className="space-y-5">
-          {/* Alertas do dia - PRIMEIRO na sidebar para destaque */}
-          {sessoesHoje && sessoesHoje.some(s => s.preparacao?.alertas && s.preparacao.alertas.length > 0) && (
-            <div className="bg-red-50 rounded-xl border border-red-200 p-5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-red-700 uppercase tracking-wider mb-3">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                </svg>
-                Alertas do Dia
-              </div>
-              <div className="space-y-3">
-                {sessoesHoje
-                  .filter(s => s.preparacao?.alertas && s.preparacao.alertas.length > 0)
-                  .map((sessao) => (
-                    <Link
-                      key={sessao.id}
-                      href={`/sessoes/${sessao.id}`}
-                      className="block p-3 rounded-lg bg-white border border-red-200 hover:border-red-300 hover:shadow-sm transition-all"
-                    >
-                      <p className="text-sm font-medium text-gray-900 mb-1">{sessao.paciente_nome}</p>
-                      {sessao.preparacao?.alertas?.map((alerta, i) => (
-                        <p key={i} className="text-sm text-red-700">{alerta}</p>
-                      ))}
-                    </Link>
-                  ))
-                }
-              </div>
-            </div>
-          )}
-
           {/* Validações Pendentes */}
           {sessoesPendentes.length > 0 && (
             <div className="bg-amber-50 rounded-xl border border-amber-200 p-5">
@@ -322,7 +342,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Resumo da semana (placeholder) */}
+          {/* Resumo da semana */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Esta Semana</h2>
             <div className="space-y-3">

@@ -99,10 +99,6 @@ function EstadoAtualTab({ resumo }: { resumo: PacienteResumo }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-400">Atualizado na última sessão</span>
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-2">
         {resumo.humor && (
           <InfoCard
