@@ -1,6 +1,14 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+
+const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
 
 export default function Home() {
+  // Em modo mock, vai direto para o dashboard
+  if (useMocks) {
+    redirect('/dashboard')
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-24">
       <div className="text-center">

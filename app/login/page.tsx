@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { createClient, useMocks } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -13,6 +13,17 @@ export default function LoginPage() {
 
   const router = useRouter()
   const supabase = createClient()
+
+  // Em modo mock, redireciona direto para o dashboard
+  useEffect(() => {
+    if (useMocks) {
+      router.push('/dashboard')
+    }
+  }, [router])
+
+  if (useMocks) {
+    return null
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
