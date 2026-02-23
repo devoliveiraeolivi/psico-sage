@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: .env
+    depends_on:
+      - inngest
+    restart: unless-stopped
+
+  inngest:
+    image: inngest/inngest:latest
+    ports:
+      - "8288:8288"
+    environment:
+      # In dev mode, Inngest auto-discovers functions at the app URL
+      INNGEST_DEV: 1
+    # Wait for app to be ready, then register functions
+    # Inngest polls the app's /api/inngest endpoint automatically
+    restart: unless-stopped

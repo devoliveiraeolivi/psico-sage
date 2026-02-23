@@ -67,7 +67,7 @@ CREATE POLICY "Usuários podem deletar seus todos"
 CREATE TRIGGER update_todos_updated_at
   BEFORE UPDATE ON todos
   FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+  EXECUTE FUNCTION update_updated_at();
 
 -- ============================================
 -- VIEW: alertas_pendentes (para dashboard)

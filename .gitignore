@@ -36,3 +36,16 @@ next-env.d.ts
 # IDE
 .idea
 .vscode
+
+# Google Cloud credentials
+service-account*.json
+psicosage-*.json
+
+# Patient data (audio, transcriptions)
+/sessoes/
+
+# Python
+__pycache__/
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -1,58 +1,102 @@
 import { formatTime, formatDate } from '@/lib/utils'
-import { mockSessoesHoje, mockPacientes, mockSessoes } from '@/lib/mocks'
 import Link from 'next/link'
-
-const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
+import { UnifiedCalendar } from '@/components/unified-calendar'
+import type { CalendarSession } from '@/components/unified-calendar'
+import { ValidarResumosSidebar } from '@/components/validar-resumos-sidebar'
+import { createClient } from '@/lib/supabase/server'
+import type { SessaoHoje, Sessao } from '@/lib/types'
 
 export default async function DashboardPage() {
-  let sessoesHoje = mockSessoesHoje
-  let totalPacientes = mockPacientes.filter(p => p.status === 'ativo').length
-  let proximaSessao = sessoesHoje[0]
-  let sessoesPendentes = mockSessoes.filter(s => s.status === 'aguardando_aprovacao')
-  let pacientes = mockPacientes
+  const supabase = await createClient()
+  const db = supabase as any
 
-  if (!useMocks) {
-    const { createClient } = await import('@/lib/supabase/server')
-    const supabase = await createClient()
+  const { data: sessoesHojeData } = await db
+    .from('sessoes_hoje')
+    .select('*')
+    .order('data_hora', { ascending: true }) as { data: SessaoHoje[] | null }
 
-    const { data } = await supabase
-      .from('sessoes_hoje')
-      .select('*')
-      .order('data_hora', { ascending: true })
+  const { count: totalPacientes } = await db
+    .from('pacientes')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'ativo')
 
-    const { count } = await supabase
-      .from('pacientes')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'ativo')
+  const { data: sessoesPendentesData } = await db
+    .from('sessoes')
+    .select('id, numero_sessao, data_hora, paciente_id, resumo')
+    .eq('status', 'aguardando_aprovacao')
+    .order('data_hora', { ascending: false })
+    .limit(5) as { data: Sessao[] | null }
 
-    const { data: pending } = await supabase
-      .from('sessoes')
-      .select('*')
-      .eq('status', 'aguardando_aprovacao')
-      .order('data_hora', { ascending: false })
-      .limit(5)
+  const { data: pacientesData } = await db
+    .from('pacientes')
+    .select('id, nome') as { data: { id: string; nome: string }[] | null }
 
-    const { data: p } = await supabase
-      .from('pacientes')
-      .select('id, nome')
+  const sessoesHoje = sessoesHojeData || []
+  const sessoesPendentes = sessoesPendentesData || []
+  const pacientes = pacientesData || []
+  const proximaSessao = sessoesHoje[0]
+  const pacienteMap = new Map(pacientes.map(p => [p.id, p]))
 
-    sessoesHoje = data || []
-    totalPacientes = count || 0
-    proximaSessao = sessoesHoje[0]
-    sessoesPendentes = pending || []
-    pacientes = p || []
+  const pendentesData = sessoesPendentes.map(s => ({
+    id: s.id,
+    resumo: s.resumo,
+    pacienteNome: pacienteMap.get(s.paciente_id)?.nome || 'Paciente',
+    numeroSessao: s.numero_sessao,
+    dataHora: s.data_hora,
+  }))
+
+  // Build calendar sessions
+  const now = new Date()
+  const rangeStart = new Date(now)
+  rangeStart.setDate(now.getDate() - 7)
+  const rangeEnd = new Date(now)
+  rangeEnd.setDate(now.getDate() + 7)
+
+  const { data: cs } = await db
+    .from('sessoes')
+    .select('id, data_hora, duracao_prevista, status, pacientes(nome)')
+    .gte('data_hora', rangeStart.toISOString())
+    .lt('data_hora', rangeEnd.toISOString())
+    .order('data_hora')
+
+  let calendarSessions: CalendarSession[] = []
+  if (cs) {
+    calendarSessions = cs.map((sess: any) => ({
+      id: sess.id,
+      data_hora: sess.data_hora,
+      duracao_prevista: sess.duracao_prevista || 50,
+      paciente_nome: sess.pacientes?.nome || 'Paciente',
+      status: sess.status,
+    }))
   }
 
-  const pacienteMap = new Map(pacientes.map(p => [p.id, p]))
+  // Fetch working hours
+  let hourStart = 7
+  let hourEnd = 19
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: config } = await (supabase as any)
+        .from('usuarios')
+        .select('hora_inicio_atendimento, hora_fim_atendimento')
+        .eq('id', user.id)
+        .single()
+      if (config) {
+        hourStart = config.hora_inicio_atendimento ?? 7
+        hourEnd = config.hora_fim_atendimento ?? 19
+      }
+    }
+  } catch {
+    // Use defaults if fetch fails
+  }
 
   const hoje = new Date()
   const saudacao = hoje.getHours() < 12 ? 'Bom dia' : hoje.getHours() < 18 ? 'Boa tarde' : 'Boa noite'
 
-  // Sessões com alertas
   const sessoesComAlertas = sessoesHoje?.filter(s => s.preparacao?.alertas && s.preparacao.alertas.length > 0) || []
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col flex-1 min-h-0 gap-8 overflow-hidden">
       {/* Header com saudação */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{saudacao}</h1>
@@ -108,10 +152,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-3 flex-1 min-h-0 grid-rows-[1fr]">
         {/* Coluna principal */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Alertas do Dia */}
+        <div className="lg:col-span-2 flex flex-col gap-6 min-h-0 overflow-hidden">
           {sessoesComAlertas.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -163,144 +206,22 @@ export default async function DashboardPage() {
             </div>
           )}
 
-          {/* Sessões de Hoje */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-gray-900">Sessões de Hoje</h2>
-              {sessoesHoje && sessoesHoje.length > 3 && (
-                <Link href="/agenda" className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
-                  Ver todas →
-                </Link>
-              )}
-            </div>
-
-            {sessoesHoje && sessoesHoje.length > 0 ? (
-              <div className="space-y-3">
-                {sessoesHoje.slice(0, 3).map((sessao, index) => {
-                  const isProxima = index === 0
-                  const resumo = sessao.paciente_resumo || {}
-                  const preparacao = sessao.preparacao
-
-                  return (
-                    <Link
-                      key={sessao.id}
-                      href={`/sessoes/${sessao.id}`}
-                      className={`block bg-white rounded-xl border ${isProxima ? 'border-blue-200 ring-1 ring-blue-100' : 'border-gray-200'} p-5 hover:shadow-md transition-all`}
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-sm font-semibold text-blue-700">
-                            {sessao.paciente_nome.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                          </span>
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="font-medium text-gray-900">{sessao.paciente_nome}</span>
-                            <span className="text-sm text-gray-500">{formatTime(sessao.data_hora)}</span>
-                            {isProxima && (
-                              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-                                Próxima
-                              </span>
-                            )}
-                          </div>
-
-                          {resumo.momento && (
-                            <p className="text-sm text-gray-500 mb-2">{resumo.momento}</p>
-                          )}
-
-                          {preparacao?.pontos_retomar && preparacao.pontos_retomar.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {preparacao.pontos_retomar.slice(0, 2).map((ponto, i) => (
-                                <span key={i} className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">
-                                  {ponto.length > 40 ? ponto.slice(0, 40) + '...' : ponto}
-                                </span>
-                              ))}
-                              {preparacao.pontos_retomar.length > 2 && (
-                                <span className="text-xs text-gray-400">
-                                  +{preparacao.pontos_retomar.length - 2}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                        </svg>
-                      </div>
-                    </Link>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border border-gray-200 px-5 py-12 text-center">
-                <div className="w-12 h-12 rounded-full bg-gray-100 mx-auto mb-4 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                </div>
-                <p className="text-gray-500">Nenhuma sessão agendada para hoje</p>
-                <Link
-                  href="/agenda/nova"
-                  className="inline-flex items-center gap-2 mt-4 text-sm text-primary hover:underline"
-                >
-                  Agendar sessão
-                </Link>
-              </div>
-            )}
-          </div>
+          <UnifiedCalendar
+            sessions={calendarSessions}
+            views={['dia', 'semana']}
+            defaultView="dia"
+            compact
+            sessionHref="/sessoes"
+            hourStart={hourStart}
+            hourEnd={hourEnd}
+            fillHeight
+          />
         </div>
 
         {/* Coluna lateral */}
-        <div className="space-y-5">
-          {/* Validações Pendentes */}
-          {sessoesPendentes.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-                  <h2 className="text-sm font-semibold text-gray-900">Validar Resumos</h2>
-                </div>
-                <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
-                  {sessoesPendentes.length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {sessoesPendentes.slice(0, 3).map((sessao) => {
-                  const paciente = pacienteMap.get(sessao.paciente_id)
-                  return (
-                    <Link
-                      key={sessao.id}
-                      href={`/sessoes/${sessao.id}`}
-                      className="block p-3 rounded-lg bg-gray-50 border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-900">{paciente?.nome || 'Paciente'}</span>
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                        </svg>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        {'numero_sessao' in sessao && sessao.numero_sessao && `Sessão ${sessao.numero_sessao} · `}
-                        {formatDate(sessao.data_hora)}
-                      </p>
-                    </Link>
-                  )
-                })}
-              </div>
-              {sessoesPendentes.length > 3 && (
-                <Link
-                  href="/sessoes"
-                  className="block mt-3 text-center text-xs font-medium text-amber-600 hover:text-amber-700"
-                >
-                  Ver todas ({sessoesPendentes.length}) →
-                </Link>
-              )}
-            </div>
-          )}
+        <div className="space-y-3 overflow-y-auto min-h-0">
+          <ValidarResumosSidebar sessoes={pendentesData} />
 
-          {/* Resumo da semana */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Esta Semana</h2>
             <div className="space-y-3">
@@ -319,14 +240,10 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          {/* Ações rápidas */}
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Ações Rápidas</h2>
-            <div className="space-y-2">
-              <Link
-                href="/pacientes/novo"
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-              >
+            <div className="space-y-1">
+              <Link href="/pacientes/novo" className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
                 <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                   <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
@@ -334,11 +251,7 @@ export default async function DashboardPage() {
                 </div>
                 <span className="text-sm text-gray-700">Novo Paciente</span>
               </Link>
-
-              <Link
-                href="/agenda/nova"
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-              >
+              <Link href="/agenda/nova" className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
                   <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -346,11 +259,7 @@ export default async function DashboardPage() {
                 </div>
                 <span className="text-sm text-gray-700">Agendar Sessão</span>
               </Link>
-
-              <Link
-                href="/pacientes"
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
-              >
+              <Link href="/pacientes" className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
                 <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
                   <svg className="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />

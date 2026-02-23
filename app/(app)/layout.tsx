@@ -1,25 +1,15 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
-
-const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  if (!useMocks) {
-    const { createClient } = await import('@/lib/supabase/server')
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      redirect('/login')
-    }
-  }
+  // Auth is enforced by middleware (lib/supabase/middleware.ts)
+  // No need to call auth.getUser() here — saves a network round-trip per page load
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="h-screen bg-background flex overflow-hidden">
       {/* Sidebar escura */}
       <aside className="w-60 bg-slate-900 flex flex-col">
         <div className="p-6">
@@ -43,8 +33,8 @@ export default async function AppLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-5xl mx-auto px-8 py-8">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="max-w-7xl mx-auto px-8 py-8 w-full flex-1 flex flex-col min-h-0 overflow-auto">
           {children}
         </div>
       </main>

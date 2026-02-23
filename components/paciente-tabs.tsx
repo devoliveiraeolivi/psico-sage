@@ -86,111 +86,96 @@ export function PacienteTabs({ resumo, historico, sessoes }: PacienteTabsProps) 
 }
 
 function EstadoAtualTab({ resumo }: { resumo: PacienteResumo }) {
-  if (!resumo || Object.keys(resumo).length === 0) {
-    return (
-      <div className="text-center py-12 text-gray-400">
-        <svg className="w-10 h-10 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-        </svg>
-        <p className="text-sm">Nenhum estado registrado ainda</p>
-      </div>
-    )
-  }
+  if (!resumo) resumo = {}
+
+  const emptyPlaceholder = '—'
 
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2">
-        {resumo.humor && (
-          <InfoCard
-            label="Humor"
-            value={resumo.humor}
-            iconBg="bg-amber-50"
-            iconColor="text-amber-600"
-            icon={<MoodIcon />}
-          />
-        )}
-        {resumo.momento && (
-          <InfoCard
-            label="Momento"
-            value={resumo.momento}
-            iconBg="bg-blue-50"
-            iconColor="text-blue-600"
-            icon={<MomentoIcon />}
-          />
-        )}
-        {resumo.diagnosticos && (
-          <InfoCard
-            label="Diagnósticos"
-            value={resumo.diagnosticos}
-            iconBg="bg-violet-50"
-            iconColor="text-violet-600"
-            icon={<DiagIcon />}
-          />
-        )}
-        {resumo.conflitos && (
-          <InfoCard
-            label="Conflitos Atuais"
-            value={resumo.conflitos}
-            iconBg="bg-orange-50"
-            iconColor="text-orange-600"
-            icon={<ConflictIcon />}
-          />
-        )}
-        {resumo.traumas && (
-          <InfoCard
-            label="Traumas"
-            value={resumo.traumas}
-            iconBg="bg-rose-50"
-            iconColor="text-rose-600"
-            icon={<TraumaIcon />}
-          />
-        )}
-        {resumo.padroes && (
-          <InfoCard
-            label="Padrões"
-            value={resumo.padroes}
-            iconBg="bg-indigo-50"
-            iconColor="text-indigo-600"
-            icon={<PatternIcon />}
-          />
-        )}
-        {resumo.gatilhos && (
-          <InfoCard
-            label="Gatilhos"
-            value={resumo.gatilhos}
-            iconBg="bg-red-50"
-            iconColor="text-red-500"
-            icon={<TriggerIcon />}
-          />
-        )}
-        {resumo.recursos && (
-          <InfoCard
-            label="Recursos"
-            value={resumo.recursos}
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
-            icon={<ResourceIcon />}
-          />
-        )}
+        <InfoCard
+          label="Humor"
+          value={resumo.humor || emptyPlaceholder}
+          empty={!resumo.humor}
+          iconBg="bg-amber-50"
+          iconColor="text-amber-600"
+          icon={<MoodIcon />}
+        />
+        <InfoCard
+          label="Momento"
+          value={resumo.momento || emptyPlaceholder}
+          empty={!resumo.momento}
+          iconBg="bg-blue-50"
+          iconColor="text-blue-600"
+          icon={<MomentoIcon />}
+        />
+        <InfoCard
+          label="Diagnósticos"
+          value={resumo.diagnosticos || emptyPlaceholder}
+          empty={!resumo.diagnosticos}
+          iconBg="bg-violet-50"
+          iconColor="text-violet-600"
+          icon={<DiagIcon />}
+        />
+        <InfoCard
+          label="Conflitos Atuais"
+          value={resumo.conflitos || emptyPlaceholder}
+          empty={!resumo.conflitos}
+          iconBg="bg-orange-50"
+          iconColor="text-orange-600"
+          icon={<ConflictIcon />}
+        />
+        <InfoCard
+          label="Traumas"
+          value={resumo.traumas || emptyPlaceholder}
+          empty={!resumo.traumas}
+          iconBg="bg-rose-50"
+          iconColor="text-rose-600"
+          icon={<TraumaIcon />}
+        />
+        <InfoCard
+          label="Padrões"
+          value={resumo.padroes || emptyPlaceholder}
+          empty={!resumo.padroes}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-600"
+          icon={<PatternIcon />}
+        />
+        <InfoCard
+          label="Gatilhos"
+          value={resumo.gatilhos || emptyPlaceholder}
+          empty={!resumo.gatilhos}
+          iconBg="bg-red-50"
+          iconColor="text-red-500"
+          icon={<TriggerIcon />}
+        />
+        <InfoCard
+          label="Recursos"
+          value={resumo.recursos || emptyPlaceholder}
+          empty={!resumo.recursos}
+          iconBg="bg-emerald-50"
+          iconColor="text-emerald-600"
+          icon={<ResourceIcon />}
+        />
       </div>
 
       {/* Tarefas */}
-      {resumo.tarefas && (
-        <div className="mt-5 pt-5 border-t border-gray-100">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-6 h-6 rounded-md bg-sky-50 flex items-center justify-center">
-              <svg className="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <span className="text-sm font-semibold text-gray-700">Tarefas em Andamento</span>
+      <div className="mt-5 pt-5 border-t border-gray-100">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-6 h-6 rounded-md bg-sky-50 flex items-center justify-center">
+            <svg className="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-          <p className="text-sm text-gray-600 pl-8">{resumo.tarefas}</p>
+          <span className="text-sm font-semibold text-gray-700">Tarefas em Andamento</span>
         </div>
-      )}
+        <p className={`text-sm pl-8 ${resumo.tarefas ? 'text-gray-600' : 'text-gray-300 italic'}`}>
+          {resumo.tarefas || 'Nenhuma tarefa registrada'}
+        </p>
+      </div>
 
       {/* Alerta */}
-      {resumo.alertas && resumo.alertas !== 'nenhum no momento' && (
+      {resumo.alertas && resumo.alertas !== 'nenhum no momento' ? (
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -200,23 +185,23 @@ function EstadoAtualTab({ resumo }: { resumo: PacienteResumo }) {
           </div>
           <p className="text-sm text-amber-800">{resumo.alertas}</p>
         </div>
+      ) : (
+        <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            Alertas
+          </div>
+          <p className="text-sm text-gray-300 italic mt-1">Nenhum alerta</p>
+        </div>
       )}
     </div>
   )
 }
 
 function HistoricoTab({ historico }: { historico: PacienteHistorico }) {
-  if (!historico || Object.keys(historico).length === 0) {
-    return (
-      <div className="text-center py-12 text-gray-400">
-        <svg className="w-10 h-10 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <p className="text-sm">Nenhum histórico registrado ainda</p>
-        <p className="text-xs text-gray-300 mt-1">O histórico será preenchido após as sessões</p>
-      </div>
-    )
-  }
+  if (!historico) historico = {}
 
   const sections = [
     { key: 'marcos', title: 'Marcos', tagClass: 'bg-emerald-50 text-emerald-700', dotColor: 'bg-emerald-500' },
@@ -232,31 +217,37 @@ function HistoricoTab({ historico }: { historico: PacienteHistorico }) {
     <div className="space-y-6">
       {sections.map(({ key, title, tagClass, dotColor }) => {
         const items = historico[key]
-        if (!items || items.length === 0) return null
+        const hasItems = items && items.length > 0
 
         return (
           <div key={key}>
             <div className="flex items-center gap-2 mb-3">
-              <div className={`w-2 h-2 rounded-full ${dotColor}`}></div>
-              <span className="text-sm font-semibold text-gray-700">{title}</span>
-              <span className="text-xs text-gray-400">({items.length})</span>
+              <div className={`w-2 h-2 rounded-full ${hasItems ? dotColor : 'bg-gray-200'}`}></div>
+              <span className={`text-sm font-semibold ${hasItems ? 'text-gray-700' : 'text-gray-400'}`}>{title}</span>
+              {hasItems && <span className="text-xs text-gray-400">({items.length})</span>}
             </div>
-            <div className="space-y-2 pl-4 border-l-2 border-gray-100">
-              {items.map((item, i) => (
-                <div key={i} className="flex items-start gap-3 text-sm">
-                  <span className="text-gray-400 text-xs w-20 flex-shrink-0 pt-0.5">
-                    {formatDate(item.data)}
-                  </span>
-                  <div className="flex-1">
-                    <span className="text-gray-700">{item.valor}</span>
-                    {item.acao && (
-                      <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${tagClass}`}>
-                        {item.acao}
+            <div className={`pl-4 border-l-2 ${hasItems ? 'border-gray-100' : 'border-gray-50'}`}>
+              {hasItems ? (
+                <div className="space-y-2">
+                  {items.map((item, i) => (
+                    <div key={i} className="flex items-start gap-3 text-sm">
+                      <span className="text-gray-400 text-xs w-20 flex-shrink-0 pt-0.5">
+                        {formatDate(item.data)}
                       </span>
-                    )}
-                  </div>
+                      <div className="flex-1">
+                        <span className="text-gray-700">{item.valor}</span>
+                        {item.acao && (
+                          <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${tagClass}`}>
+                            {item.acao}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                <p className="text-sm text-gray-300 italic">Sem registros ainda</p>
+              )}
             </div>
           </div>
         )
@@ -266,7 +257,7 @@ function HistoricoTab({ historico }: { historico: PacienteHistorico }) {
 }
 
 function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
-  const sessoesComResumo = sessoes.filter(s => s.resumo?.sintese)
+  const sessoesComResumo = sessoes.filter(s => s.resumo?.resumo_sessao?.sintese)
 
   if (sessoesComResumo.length === 0) {
     return (
@@ -274,8 +265,8 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
         <svg className="w-10 h-10 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
-        <p className="text-sm">Nenhum resumo de sessão ainda</p>
-        <p className="text-xs text-gray-300 mt-1">Os resumos serão gerados após cada sessão</p>
+        <p className="text-sm">Nenhum prontuário de sessão ainda</p>
+        <p className="text-xs text-gray-300 mt-1">Os prontuários serão gerados após cada sessão</p>
       </div>
     )
   }
@@ -283,114 +274,126 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
   return (
     <div className="space-y-4">
       <div className="text-xs text-gray-400 mb-4">
-        {sessoesComResumo.length} sessões com resumo
+        {sessoesComResumo.length} sessões com prontuário
       </div>
 
-      {sessoesComResumo.map((sessao) => (
-        <div
-          key={sessao.id}
-          className="p-4 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
-        >
-          {/* Header da sessão */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold text-gray-900">
-                Sessão {sessao.numero_sessao}
-              </span>
-              <span className="text-xs text-gray-400">
-                {formatDate(sessao.data_hora)}
-              </span>
-            </div>
-            {sessao.resumo?.humor && (
-              <span className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded">
-                {sessao.resumo.humor}
-              </span>
-            )}
-          </div>
-
-          {/* Síntese */}
-          {sessao.resumo?.sintese && (
-            <p className="text-sm text-gray-700 leading-relaxed mb-3">
-              {sessao.resumo.sintese}
-            </p>
-          )}
-
-          {/* Temas */}
-          {sessao.resumo?.temas && sessao.resumo.temas.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {sessao.resumo.temas.map((tema, i) => (
-                <span key={i} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                  {tema}
+      {sessoesComResumo.map((sessao) => {
+        const r = sessao.resumo
+        return (
+          <div
+            key={sessao.id}
+            className="p-4 rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
+          >
+            {/* Header da sessão */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-gray-900">
+                  Sessão {sessao.numero_sessao}
                 </span>
-              ))}
+                <span className="text-xs text-gray-400">
+                  {formatDate(sessao.data_hora)}
+                </span>
+              </div>
+              {r?.estado_mental_sessao?.humor && (
+                <span className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded">
+                  {r.estado_mental_sessao.humor}
+                </span>
+              )}
             </div>
-          )}
 
-          {/* Insights e Pontos Importantes */}
-          <div className="grid gap-3 sm:grid-cols-2 mt-3">
-            {sessao.resumo?.insights && sessao.resumo.insights.length > 0 && (
-              <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
-                <div className="text-xs font-medium text-blue-600 mb-1.5">Insights</div>
+            {/* Síntese */}
+            {r?.resumo_sessao?.sintese && (
+              <p className="text-sm text-gray-700 leading-relaxed mb-3">
+                {r.resumo_sessao.sintese}
+              </p>
+            )}
+
+            {/* Temas Trabalhados */}
+            {r?.intervencoes?.temas_trabalhados && r.intervencoes.temas_trabalhados.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {r.intervencoes.temas_trabalhados.map((tema, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                    {tema}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Pontos Principais e Mudanças */}
+            <div className="grid gap-3 sm:grid-cols-2 mt-3">
+              {r?.resumo_sessao?.pontos_principais && r.resumo_sessao.pontos_principais.length > 0 && (
+                <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
+                  <div className="text-xs font-medium text-blue-600 mb-1.5">Pontos Principais</div>
+                  <ul className="space-y-1">
+                    {r.resumo_sessao.pontos_principais.map((p, i) => (
+                      <li key={i} className="text-xs text-gray-700">• {p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {r?.resumo_sessao?.mudancas_observadas && r.resumo_sessao.mudancas_observadas.length > 0 && (
+                <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-100">
+                  <div className="text-xs font-medium text-emerald-600 mb-1.5">Mudanças Observadas</div>
+                  <ul className="space-y-1">
+                    {r.resumo_sessao.mudancas_observadas.map((m, i) => (
+                      <li key={i} className="text-xs text-gray-700">• {m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Tarefas novas */}
+            {r?.plano_metas?.tarefas_novas && r.plano_metas.tarefas_novas.length > 0 && (
+              <div className="mt-3 p-3 rounded-lg bg-sky-50/50 border border-sky-100">
+                <div className="text-xs font-medium text-sky-600 mb-1.5">Tarefas Atribuídas</div>
                 <ul className="space-y-1">
-                  {sessao.resumo.insights.map((insight, i) => (
-                    <li key={i} className="text-xs text-gray-700">• {insight}</li>
+                  {r.plano_metas.tarefas_novas.map((tarefa, i) => (
+                    <li key={i} className="text-xs text-gray-700">• {tarefa}</li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {sessao.resumo?.pontos_importantes && sessao.resumo.pontos_importantes.length > 0 && (
-              <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                <div className="text-xs font-medium text-emerald-600 mb-1.5">Pontos Importantes</div>
-                <ul className="space-y-1">
-                  {sessao.resumo.pontos_importantes.map((ponto, i) => (
-                    <li key={i} className="text-xs text-gray-700">• {ponto}</li>
-                  ))}
-                </ul>
+            {/* Evolução CRP (preview) */}
+            {r?.evolucao_crp && (
+              <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="text-xs font-medium text-slate-500 mb-1">Evolução CFP</div>
+                <p className="text-xs text-slate-600 line-clamp-3">{r.evolucao_crp}</p>
               </div>
             )}
           </div>
-
-          {/* Tarefas atribuídas */}
-          {sessao.resumo?.tarefas && sessao.resumo.tarefas.length > 0 && (
-            <div className="mt-3 p-3 rounded-lg bg-sky-50/50 border border-sky-100">
-              <div className="text-xs font-medium text-sky-600 mb-1.5">Tarefas Atribuídas</div>
-              <ul className="space-y-1">
-                {sessao.resumo.tarefas.map((tarefa, i) => (
-                  <li key={i} className="text-xs text-gray-700">• {tarefa}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
-// InfoCard com labels maiores e em negrito
 function InfoCard({
   label,
   value,
   icon,
   iconBg,
-  iconColor
+  iconColor,
+  empty
 }: {
   label: string
   value: string
   icon: React.ReactNode
   iconBg: string
   iconColor: string
+  empty?: boolean
 }) {
   return (
-    <div className="p-4 rounded-lg bg-gray-50/50 border border-gray-100">
+    <div className={`p-4 rounded-lg border ${empty ? 'bg-gray-50/30 border-gray-100/60' : 'bg-gray-50/50 border-gray-100'}`}>
       <div className="flex items-center gap-2.5 mb-2">
-        <div className={`w-7 h-7 rounded-md ${iconBg} flex items-center justify-center`}>
-          <span className={iconColor}>{icon}</span>
+        <div className={`w-7 h-7 rounded-md ${empty ? 'bg-gray-100' : iconBg} flex items-center justify-center`}>
+          <span className={empty ? 'text-gray-300' : iconColor}>{icon}</span>
         </div>
-        <span className="text-sm font-semibold text-gray-600">{label}</span>
+        <span className={`text-sm font-semibold ${empty ? 'text-gray-400' : 'text-gray-600'}`}>{label}</span>
       </div>
-      <p className="text-sm text-gray-600 pl-9">{value}</p>
+      <p className={`text-sm pl-9 ${empty ? 'text-gray-300 italic' : 'text-gray-600'}`}>{value}</p>
     </div>
   )
 }

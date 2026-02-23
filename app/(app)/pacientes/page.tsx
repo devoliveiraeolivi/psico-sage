@@ -1,33 +1,26 @@
-import { mockPacientes } from '@/lib/mocks'
 import Link from 'next/link'
 import { PacientesList } from '@/components/pacientes-list'
-
-const useMocks = !process.env.NEXT_PUBLIC_SUPABASE_URL
+import { createClient } from '@/lib/supabase/server'
+import type { Paciente } from '@/lib/types'
 
 export default async function PacientesPage() {
-  let pacientes = mockPacientes
+  const supabase = await createClient()
 
-  if (!useMocks) {
-    const { createClient } = await import('@/lib/supabase/server')
-    const supabase = await createClient()
+  const { data, error } = await (supabase as any)
+    .from('pacientes')
+    .select('*')
+    .order('nome', { ascending: true }) as { data: Paciente[] | null; error: any }
 
-    const { data, error } = await supabase
-      .from('pacientes')
-      .select('*')
-      .order('nome', { ascending: true })
-
-    if (error) {
-      console.error('Erro ao buscar pacientes:', error)
-    }
-    pacientes = data || []
+  if (error) {
+    console.error('Erro ao buscar pacientes:', error)
   }
 
+  const pacientes = data || []
   const pacientesAtivos = pacientes.filter(p => p.status === 'ativo').length
   const pacientesPausados = pacientes.filter(p => p.status === 'pausado').length
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pacientes</h1>
@@ -35,18 +28,28 @@ export default async function PacientesPage() {
             {pacientesAtivos} ativos{pacientesPausados > 0 ? ` · ${pacientesPausados} pausados` : ''}
           </p>
         </div>
-        <Link
-          href="/pacientes/novo"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors shadow-sm"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Novo Paciente
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/pacientes/novo/massa"
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+            </svg>
+            Cadastro em Massa
+          </Link>
+          <Link
+            href="/pacientes/novo"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Novo Paciente
+          </Link>
+        </div>
       </div>
 
-      {/* Lista com busca e filtros */}
       {pacientes && pacientes.length > 0 ? (
         <PacientesList pacientes={pacientes} />
       ) : (

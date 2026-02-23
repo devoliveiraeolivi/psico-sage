@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export PATH=\"$PATH:/c/Users/Pichau/AppData/Local/Microsoft/WinGet/Links\")",
+      "Bash(pip show:*)",
+      "Bash(\"C:/Users/Pichau/AppData/Local/Programs/Python/Python312/python.exe\" transcricao/transcrever.py \"sessoes/C.B..m4a\" --modelo base --formato json)",
+      "Bash(\"C:/Users/Pichau/AppData/Local/Programs/Python/Python312/python.exe\" transcricao/transcrever.py \"sessoes/C.B..m4a\" --modelo turbo --formato json)",
+      "Bash(\"C:/Users/Pichau/AppData/Local/Programs/Python/Python312/python.exe\" -m pip install whisperx)"
+    ]
+  }
+}
