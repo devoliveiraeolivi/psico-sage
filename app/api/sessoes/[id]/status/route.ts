@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
 
 /**
  * GET /api/sessoes/[id]/status
@@ -13,7 +13,11 @@ export async function GET(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     const { data: sessao, error } = await db
       .from('sessoes')

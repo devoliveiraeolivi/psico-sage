@@ -2,6 +2,7 @@ import { UnifiedCalendar } from '@/components/unified-calendar'
 import type { CalendarSession } from '@/components/unified-calendar'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { PageTourWrapper } from '@/components/page-tour-wrapper'
 
 export default async function AgendaPage() {
   const db = (await createClient()) as any
@@ -52,12 +53,13 @@ export default async function AgendaPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-6 overflow-hidden">
-      <div className="flex-shrink-0">
+      <PageTourWrapper pageId="agenda" />
+      <div id="agenda-header" className="flex-shrink-0">
         <h1 className="text-2xl font-semibold tracking-tight">Agenda</h1>
         <p className="text-muted-foreground mt-1">Visualize suas sessões no calendário</p>
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div id="calendar-grid" className="flex-1 min-h-0 flex flex-col">
         <UnifiedCalendar
           sessions={sessions}
           views={['semana', 'mes']}

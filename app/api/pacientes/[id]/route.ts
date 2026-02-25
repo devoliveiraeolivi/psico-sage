@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requirePatientOwner } from '@/lib/utils/auth'
+import { logger } from '@/lib/utils/logger'
 
 const FREQUENCIAS_VALIDAS = ['semanal', 'quinzenal', 'mensal']
 
@@ -10,7 +11,12 @@ export async function PATCH(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requirePatientOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
+
     const body = await request.json()
 
     // Campos permitidos para atualização de recorrência
@@ -56,12 +62,12 @@ export async function PATCH(
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao atualizar paciente' }, { status: 500 })
     }
 
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Erro ao atualizar paciente:', error)
+    logger.error('Erro ao atualizar paciente', { pacienteId: id, error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json(
       { error: 'Erro interno ao atualizar paciente' },
       { status: 500 }

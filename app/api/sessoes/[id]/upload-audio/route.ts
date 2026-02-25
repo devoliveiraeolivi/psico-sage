@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
 import { inngest } from '@/lib/inngest/client'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
+import { MAX_UPLOAD_SIZE_MB } from '@/lib/transcription/groq'
+
+const ALLOWED_AUDIO_TYPES = ['audio/webm', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'video/webm']
 
 export async function POST(
   request: NextRequest,
@@ -12,11 +15,14 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     // Rate limiting
-    const { data: { user } } = await db.auth.getUser()
-    const userId = user?.id || 'anonymous'
+    const userId = user!.id
     const rl = checkRateLimit(`upload:${userId}`, RATE_LIMITS.uploadAudio)
     if (!rl.success) {
       return NextResponse.json(
@@ -32,6 +38,24 @@ export async function POST(
 
     if (!audioFile) {
       return NextResponse.json({ error: 'Arquivo de áudio não enviado' }, { status: 400 })
+    }
+
+    // Validar MIME type com lista exata
+    const fileType = audioFile.type || ''
+    if (fileType && !ALLOWED_AUDIO_TYPES.includes(fileType)) {
+      return NextResponse.json(
+        { error: `Tipo de arquivo não suportado: ${fileType}. Envie um arquivo de áudio.` },
+        { status: 415 }
+      )
+    }
+
+    // Validar tamanho máximo
+    const fileSizeMB = audioFile.size / (1024 * 1024)
+    if (fileSizeMB > MAX_UPLOAD_SIZE_MB) {
+      return NextResponse.json(
+        { error: `Arquivo muito grande (${fileSizeMB.toFixed(0)}MB). Limite: ${MAX_UPLOAD_SIZE_MB}MB.` },
+        { status: 413 }
+      )
     }
 
     // Atualizar status para uploading

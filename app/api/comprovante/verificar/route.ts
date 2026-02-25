@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verificarCodigo } from '@/lib/comprovante'
+import { checkRateLimit } from '@/lib/utils/rate-limit'
 
 /** GET /api/comprovante/verificar?s={sessaoId}&c={codigo} */
 export async function GET(request: NextRequest) {
+  // Rate limit by IP to prevent brute-force code guessing
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
+  const rl = checkRateLimit(`comprovante:${ip}`, { windowMs: 60_000, maxRequests: 10 })
+  if (!rl.success) {
+    return NextResponse.json({ valid: false, error: 'Muitas tentativas. Aguarde.' }, { status: 429 })
+  }
+
   const sessaoId = request.nextUrl.searchParams.get('s')
   const codigo = request.nextUrl.searchParams.get('c')
 

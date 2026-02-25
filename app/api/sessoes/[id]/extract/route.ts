@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { extractResumo } from '@/lib/ai/extract-resumo'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
+import { inngest } from '@/lib/inngest/client'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
 import { logger } from '@/lib/utils/logger'
-import { captureException } from '@/lib/utils/sentry'
 
+/**
+ * POST /api/sessoes/[id]/extract
+ * Triggers background extraction (re-extract from existing transcription).
+ * Fire-and-forget — returns immediately so navigating away doesn't stop it.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,11 +16,14 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     // Rate limiting
-    const { data: { user } } = await db.auth.getUser()
-    const userId = user?.id || 'anonymous'
+    const userId = user!.id
     const rl = checkRateLimit(`extract:${userId}`, RATE_LIMITS.extract)
     if (!rl.success) {
       return NextResponse.json(
@@ -25,10 +32,10 @@ export async function POST(
       )
     }
 
-    // Buscar transcrição
+    // Verificar que sessão tem transcrição
     const { data: sessao, error: fetchError } = await db
       .from('sessoes')
-      .select('integra')
+      .select('integra, recording_status')
       .eq('id', id)
       .single()
 
@@ -36,35 +43,31 @@ export async function POST(
       return NextResponse.json({ error: 'Transcrição não encontrada' }, { status: 404 })
     }
 
-    // Extrair dados estruturados via Gemini 2.5 Flash
-    logger.info('Extraction starting', { sessaoId: id, textLength: sessao.integra.length })
-    const resumo = await extractResumo(sessao.integra)
+    // Bloquear se já está processando
+    if (sessao.recording_status && ['transcribing', 'processing', 'uploading'].includes(sessao.recording_status)) {
+      return NextResponse.json({ error: 'Sessão já está sendo processada' }, { status: 409 })
+    }
 
-    // Salvar resumo e mudar status para aguardando_aprovacao
+    // Marcar como processando e disparar extração em background
     await db
       .from('sessoes')
       .update({
-        resumo,
-        status: 'aguardando_aprovacao',
-        recording_status: 'done',
+        recording_status: 'processing',
         processing_error: null,
       })
       .eq('id', id)
 
-    return NextResponse.json({ resumo })
-  } catch (error) {
-    const db = await createClient() as any
-    const message = error instanceof Error ? error.message : 'Erro desconhecido'
-    await db
-      .from('sessoes')
-      .update({
-        recording_status: 'error',
-        processing_error: `Extração IA falhou: ${message}`,
-      })
-      .eq('id', id)
+    await inngest.send({
+      name: 'session/extract.requested',
+      data: { sessaoId: id },
+    })
 
-    logger.error('Extraction failed', { sessaoId: id, error: message })
-    if (error instanceof Error) captureException(error, { sessaoId: id, operation: 'extract' })
-    return NextResponse.json({ error: message }, { status: 500 })
+    logger.info('Extract-only triggered', { sessaoId: id })
+
+    return NextResponse.json({ ok: true, message: 'Extração iniciada em background' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    logger.error('Extract trigger failed', { sessaoId: id, error: message })
+    return NextResponse.json({ error: 'Erro interno ao iniciar extração' }, { status: 500 })
   }
 }

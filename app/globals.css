@@ -38,3 +38,119 @@
     font-feature-settings: "cv11", "ss01";
   }
 }
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out;
+}
+
+/* ============================================
+   Slide-in animation (help drawer)
+   ============================================ */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.25s ease-out;
+}
+
+/* ============================================
+   Hotspot pulse (feature walkthrough)
+   ============================================ */
+@keyframes hotspotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+.animate-hotspot-pulse {
+  animation: hotspotPulse 2s ease-in-out infinite;
+}
+
+/* ============================================
+   driver.js Tour Theme Overrides
+   ============================================ */
+.driver-popover.psico-tour-popover {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  border-radius: 12px;
+  padding: 20px 24px;
+  max-width: 360px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  border: 1px solid hsl(220, 15%, 88%);
+}
+
+.driver-popover.psico-tour-popover .driver-popover-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: hsl(220, 20%, 10%);
+  margin: 0;
+}
+
+.driver-popover.psico-tour-popover .driver-popover-description {
+  font-size: 13px;
+  color: hsl(220, 10%, 45%);
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.driver-popover.psico-tour-popover .driver-popover-progress-text {
+  font-size: 11px;
+  color: hsl(220, 10%, 55%);
+}
+
+.driver-popover.psico-tour-popover .driver-popover-prev-btn {
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(220, 10%, 45%);
+  border: 1px solid hsl(220, 15%, 88%);
+  border-radius: 8px;
+  padding: 6px 14px;
+  background: white;
+}
+
+.driver-popover.psico-tour-popover .driver-popover-prev-btn:hover {
+  background: hsl(220, 15%, 96%);
+}
+
+.driver-popover.psico-tour-popover .driver-popover-next-btn,
+.driver-popover.psico-tour-popover button.driver-popover-close-btn-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  background: hsl(221, 83%, 53%);
+  border-radius: 8px;
+  padding: 6px 14px;
+  border: none;
+}
+
+.driver-popover.psico-tour-popover .driver-popover-next-btn:hover,
+.driver-popover.psico-tour-popover button.driver-popover-close-btn-text:hover {
+  background: hsl(221, 83%, 45%);
+}
+
+.driver-popover.psico-tour-popover .driver-popover-footer {
+  margin-top: 16px;
+}
+
+.driver-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+.driver-active-element {
+  border-radius: 12px !important;
+}

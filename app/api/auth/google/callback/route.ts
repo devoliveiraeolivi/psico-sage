@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { exchangeCodeForTokens, getOAuth2Client } from '@/lib/google/calendar'
+import { encryptTextField } from '@/lib/supabase/encrypt'
 
 /** GET /api/auth/google/callback — Recebe o code do Google, troca por tokens e salva */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const code = url.searchParams.get('code')
   const error = url.searchParams.get('error')
+  const state = url.searchParams.get('state') || ''
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
+  // Validate redirect path against whitelist to prevent open redirect
+  const ALLOWED_REDIRECTS = ['/configuracoes', '/dashboard', '/sessoes', '/pacientes', '/agenda']
+  const redirectPath = ALLOWED_REDIRECTS.includes(state) ? state : '/configuracoes'
+
   if (error) {
     return NextResponse.redirect(
-      `${appUrl}/configuracoes?google=error&message=${encodeURIComponent(error)}`
+      `${appUrl}${redirectPath}?google=error&message=${encodeURIComponent(error)}`
     )
   }
 
   if (!code) {
     return NextResponse.redirect(
-      `${appUrl}/configuracoes?google=error&message=Código de autorização não recebido`
+      `${appUrl}${redirectPath}?google=error&message=Código de autorização não recebido`
     )
   }
 
@@ -28,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokens.refresh_token) {
       return NextResponse.redirect(
-        `${appUrl}/configuracoes?google=error&message=Google não retornou refresh_token. Tente revogar o acesso e reconectar.`
+        `${appUrl}${redirectPath}?google=error&message=Google não retornou refresh_token. Tente revogar o acesso e reconectar.`
       )
     }
 
@@ -50,7 +56,7 @@ export async function GET(request: NextRequest) {
     // Salvar tokens no perfil da psicóloga
     // Usa admin client para bypassar RLS — o user já foi autenticado via getUser() acima
     const updateData = {
-      google_refresh_token: tokens.refresh_token,
+      google_refresh_token: encryptTextField(tokens.refresh_token),
       google_email: userInfo.email || null,
       google_connected_at: new Date().toISOString(),
     }
@@ -65,7 +71,7 @@ export async function GET(request: NextRequest) {
       .eq('id', user.id)
 
     if (rlsError) {
-      console.warn('Update com anon key falhou (provavelmente RLS):', rlsError.message)
+      // Update com anon key falhou (provavelmente RLS) — fallback para admin
       // Fallback: usar service_role key
       try {
         const admin = createAdminClient() as any
@@ -75,24 +81,21 @@ export async function GET(request: NextRequest) {
           .eq('id', user.id)
         updateError = adminError
       } catch (adminErr) {
-        console.error('Admin client não disponível:', adminErr)
+        // Admin client não disponível
         updateError = rlsError
       }
     }
 
     if (updateError) {
-      console.error('Erro ao salvar tokens Google no DB:', updateError)
       return NextResponse.redirect(
-        `${appUrl}/configuracoes?google=error&message=${encodeURIComponent('Erro ao salvar dados: ' + updateError.message)}`
+        `${appUrl}${redirectPath}?google=error&message=${encodeURIComponent('Erro ao salvar dados do Google')}`
       )
     }
 
-    return NextResponse.redirect(`${appUrl}/configuracoes?google=success`)
+    return NextResponse.redirect(`${appUrl}${redirectPath}?google=success`)
   } catch (err) {
-    console.error('Erro no callback Google OAuth:', err)
-    const message = err instanceof Error ? err.message : 'Erro desconhecido'
     return NextResponse.redirect(
-      `${appUrl}/configuracoes?google=error&message=${encodeURIComponent(message)}`
+      `${appUrl}${redirectPath}?google=error&message=${encodeURIComponent('Erro na autenticação Google')}`
     )
   }
 }

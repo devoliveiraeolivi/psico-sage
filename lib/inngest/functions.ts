@@ -4,6 +4,7 @@ import { extractResumo } from '@/lib/ai/extract-resumo'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
+import { encryptTextField, encryptJsonField, decryptTextField } from '@/lib/supabase/encrypt'
 
 /**
  * Creates an admin Supabase client for use in background jobs.
@@ -28,6 +29,7 @@ export const processSessionPipeline = inngest.createFunction(
   {
     id: 'process-session-pipeline',
     retries: 3,
+    concurrency: [{ key: 'event.data.sessaoId', limit: 1 }],
     onFailure: async ({ event }) => {
       const sessaoId = event.data.event.data.sessaoId
       logger.error('Pipeline permanently failed', { sessaoId })
@@ -85,11 +87,11 @@ export const processSessionPipeline = inngest.createFunction(
       logger.info('Pipeline: transcribing', { sessaoId, audioSizeMB: +(audioBuffer.length / 1024 / 1024).toFixed(1) })
       const result = await transcribeAudio(audioBuffer, sessao.audio_url)
 
-      // Save transcription
+      // Save transcription (encrypted at rest)
       await db
         .from('sessoes')
         .update({
-          integra: result.fullText,
+          integra: encryptTextField(result.fullText),
           recording_status: 'processing',
         })
         .eq('id', sessaoId)
@@ -107,7 +109,7 @@ export const processSessionPipeline = inngest.createFunction(
     await step.run('extract', async () => {
       const db = getAdminClient()
 
-      // Fetch transcription
+      // Fetch transcription (may be encrypted)
       const { data: sessao, error: fetchError } = await db
         .from('sessoes')
         .select('integra')
@@ -118,15 +120,21 @@ export const processSessionPipeline = inngest.createFunction(
         throw new Error(`Transcrição não encontrada para sessão ${sessaoId}`)
       }
 
-      // Extract via Gemini
-      logger.info('Pipeline: extracting', { sessaoId, textLength: sessao.integra.length })
-      const resumo = await extractResumo(sessao.integra)
+      // Decrypt before passing to AI
+      const integraPlain = decryptTextField(sessao.integra)
+      if (!integraPlain) {
+        throw new Error(`Falha ao descriptografar transcrição da sessão ${sessaoId}`)
+      }
 
-      // Save resumo and update status
+      // Extract via OpenAI
+      logger.info('Pipeline: extracting', { sessaoId, textLength: integraPlain.length })
+      const resumo = await extractResumo(integraPlain)
+
+      // Save resumo (encrypted at rest) and update status
       await db
         .from('sessoes')
         .update({
-          resumo,
+          resumo: encryptJsonField(resumo),
           status: 'aguardando_aprovacao',
           recording_status: 'done',
           processing_error: null,
@@ -135,6 +143,76 @@ export const processSessionPipeline = inngest.createFunction(
 
       logger.info('Pipeline: extraction complete', { sessaoId })
 
+      return { status: 'aguardando_aprovacao' }
+    })
+  }
+)
+
+/**
+ * Extract-only pipeline.
+ * Triggered when user clicks "Reprocessar pela IA" — re-extracts from existing transcription.
+ * Runs in background so navigating away doesn't stop it.
+ */
+export const extractSessionOnly = inngest.createFunction(
+  {
+    id: 'extract-session-only',
+    retries: 2,
+    concurrency: [{ key: 'event.data.sessaoId', limit: 1 }],
+    onFailure: async ({ event }) => {
+      const sessaoId = event.data.event.data.sessaoId
+      logger.error('Extract-only permanently failed', { sessaoId })
+      captureException(new Error('Extract-only permanently failed'), { sessaoId, operation: 'extract-only' })
+      try {
+        const db = getAdminClient()
+        await db
+          .from('sessoes')
+          .update({
+            recording_status: 'error',
+            processing_error: 'Extração falhou após todas as tentativas. Use o botão "Reprocessar".',
+          })
+          .eq('id', sessaoId)
+      } catch (e) {
+        logger.error('Failed to update session on extract-only failure', { sessaoId })
+      }
+    },
+  },
+  { event: 'session/extract.requested' },
+  async ({ event, step }) => {
+    const { sessaoId } = event.data
+
+    await step.run('extract', async () => {
+      const db = getAdminClient()
+
+      const { data: sessao, error: fetchError } = await db
+        .from('sessoes')
+        .select('integra')
+        .eq('id', sessaoId)
+        .single()
+
+      if (fetchError || !sessao?.integra) {
+        throw new Error(`Transcrição não encontrada para sessão ${sessaoId}`)
+      }
+
+      // Decrypt before passing to AI
+      const integraPlain = decryptTextField(sessao.integra)
+      if (!integraPlain) {
+        throw new Error(`Falha ao descriptografar transcrição da sessão ${sessaoId}`)
+      }
+
+      logger.info('Extract-only: extracting', { sessaoId, textLength: integraPlain.length })
+      const resumo = await extractResumo(integraPlain)
+
+      await db
+        .from('sessoes')
+        .update({
+          resumo: encryptJsonField(resumo),
+          status: 'aguardando_aprovacao',
+          recording_status: 'done',
+          processing_error: null,
+        })
+        .eq('id', sessaoId)
+
+      logger.info('Extract-only: complete', { sessaoId })
       return { status: 'aguardando_aprovacao' }
     })
   }

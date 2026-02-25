@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
+import { logger } from '@/lib/utils/logger'
 
 /** PATCH /api/sessoes/[id] — Atualiza metadata da sessão */
 export async function PATCH(
@@ -10,7 +11,12 @@ export async function PATCH(
 
   try {
     const body = await request.json()
-    const db = (await createClient()) as any
+
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     const { data: sessao, error: fetchError } = await db
       .from('sessoes')
@@ -22,16 +28,26 @@ export async function PATCH(
       return NextResponse.json({ error: 'Sessão não encontrada' }, { status: 404 })
     }
 
-    if (sessao.status !== 'agendada' && body.status !== 'remarcada') {
+    if (sessao.status !== 'agendada' && sessao.status !== 'remarcada' && body.status !== 'remarcada') {
       return NextResponse.json(
-        { error: 'Só é possível editar sessões com status "agendada"' },
-        { status: 400 }
+        { error: 'Só é possível editar sessões agendadas ou remarcadas' },
+        { status: 409 }
       )
     }
 
     const update: Record<string, unknown> = {}
-    if (body.data_hora) update.data_hora = body.data_hora
-    if (body.duracao_prevista) update.duracao_prevista = body.duracao_prevista
+    if (body.data_hora) {
+      if (isNaN(Date.parse(body.data_hora))) {
+        return NextResponse.json({ error: 'data_hora deve ser uma data ISO válida' }, { status: 400 })
+      }
+      update.data_hora = body.data_hora
+    }
+    if (body.duracao_prevista) {
+      if (typeof body.duracao_prevista !== 'number' || body.duracao_prevista < 1 || body.duracao_prevista > 300) {
+        return NextResponse.json({ error: 'duracao_prevista deve ser entre 1 e 300 minutos' }, { status: 400 })
+      }
+      update.duracao_prevista = body.duracao_prevista
+    }
     if (body.status === 'remarcada') update.status = 'remarcada'
 
     if (Object.keys(update).length === 0) {
@@ -46,12 +62,12 @@ export async function PATCH(
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao atualizar sessão' }, { status: 500 })
     }
 
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Erro ao atualizar sessão:', error)
+    logger.error('Erro ao atualizar sessão', { sessaoId: id, error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
@@ -64,7 +80,11 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    const db = (await createClient()) as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     const { data: sessao, error: fetchError } = await db
       .from('sessoes')
@@ -79,7 +99,7 @@ export async function DELETE(
     if (sessao.status !== 'agendada' && sessao.status !== 'remarcada') {
       return NextResponse.json(
         { error: 'Só é possível cancelar sessões agendadas ou remarcadas' },
-        { status: 400 }
+        { status: 409 }
       )
     }
 
@@ -89,12 +109,12 @@ export async function DELETE(
       .eq('id', id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao cancelar sessão' }, { status: 500 })
     }
 
     return NextResponse.json({ id, status: 'cancelada' })
   } catch (error) {
-    console.error('Erro ao cancelar sessão:', error)
+    logger.error('Erro ao cancelar sessão', { sessaoId: id, error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

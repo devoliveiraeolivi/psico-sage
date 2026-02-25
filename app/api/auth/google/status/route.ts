@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/utils/logger'
 
 /** GET /api/auth/google/status — Verifica se a psicóloga vinculou sua conta Google */
 export async function GET() {
@@ -19,7 +20,7 @@ export async function GET() {
       .single()
 
     if (error) {
-      console.error('Erro ao buscar status Google:', error)
+      logger.error('Erro ao buscar status Google', { userId: user.id, error: error.message })
     }
 
     return NextResponse.json({
@@ -28,7 +29,7 @@ export async function GET() {
       connectedAt: usuario?.google_connected_at || null,
     })
   } catch (error) {
-    console.error('Erro ao verificar status Google:', error)
+    logger.error('Erro ao verificar status Google', { error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

@@ -36,12 +36,12 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao criar paciente' }, { status: 500 })
     }
 
     return NextResponse.json(data, { status: 201 })
   } catch (error) {
-    console.error('Erro ao criar paciente:', error)
+    // Patient creation failed
     return NextResponse.json(
       { error: 'Erro interno ao criar paciente' },
       { status: 500 }

@@ -5,9 +5,11 @@ import { SessaoTabs, ContextoPacienteSidebar } from '@/components/sessao-tabs'
 import { SessaoActionsBar } from '@/components/sessao-actions'
 import { SessionRecorder } from '@/components/session-recorder'
 import { SessaoQuickActions } from '@/components/sessao-quick-actions'
+import { DeleteSessaoButton } from '@/components/delete-sessao-button'
 import { ComprovanteSessao } from '@/components/comprovante-sessao'
 import { createClient } from '@/lib/supabase/server'
 import { gerarCodigoVerificacao } from '@/lib/comprovante'
+import { decryptSessao, decryptPaciente } from '@/lib/supabase/encrypt'
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   agendada: { label: 'Agendada', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -30,18 +32,18 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
     .eq('id', id)
     .single()
 
-  const sessao = s as any
-  const paciente = sessao?.pacientes || null
+  const sessao = s ? decryptSessao(s as any) : null
+  const paciente = sessao?.pacientes ? decryptPaciente(sessao.pacientes) : null
 
   if (!sessao) {
     notFound()
   }
 
-  // Fetch professional data for comprovante
+  // Fetch professional data for comprovante + video settings
   const { data: { user } } = await (supabase as any).auth.getUser()
   const { data: usuario } = user ? await db
     .from('usuarios')
-    .select('nome, crp')
+    .select('nome, crp, video_plataforma, video_plataforma_nome, video_modo_link')
     .eq('id', user.id)
     .single() : { data: null }
 
@@ -98,6 +100,7 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
               variant="header"
             />
           )}
+          <DeleteSessaoButton sessaoId={id} pacienteNome={paciente?.nome || 'Paciente'} />
           {sessao.status === 'realizada' && (
             <ComprovanteSessao
               sessaoId={id}
@@ -118,16 +121,18 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {sessao.meet_link && sessao.status === 'em_andamento' && (
+      {sessao.video_link && sessao.status === 'em_andamento' && (
         <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
           <svg className="w-5 h-5 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
             <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <div className="flex-1">
-            <p className="text-sm font-medium text-blue-900">Sessão via Google Meet</p>
-            <p className="text-xs text-blue-600 truncate">{sessao.meet_link}</p>
+            <p className="text-sm font-medium text-blue-900">
+              Sessão via {usuario?.video_plataforma === 'google_meet' ? 'Google Meet' : usuario?.video_plataforma_nome || 'Videochamada'}
+            </p>
+            <p className="text-xs text-blue-600 truncate">{sessao.video_link}</p>
           </div>
-          <a href={sessao.meet_link} target="_blank" rel="noopener noreferrer" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
+          <a href={sessao.video_link} target="_blank" rel="noopener noreferrer" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
             Entrar na Reunião
           </a>
         </div>
@@ -138,8 +143,10 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
         status={sessao.status}
         recordingStatus={sessao.recording_status || null}
         processingError={sessao.processing_error || null}
-        meetLink={sessao.meet_link || null}
+        videoLink={sessao.video_link || null}
         hasAudio={!!sessao.audio_url}
+        videoPlataforma={usuario?.video_plataforma || 'nenhum'}
+        videoPlataformaNome={usuario?.video_plataforma_nome || null}
       />
 
       <SessaoActionsBar
@@ -160,6 +167,8 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
             jaRealizada={jaRealizada}
             sessaoId={id}
             hasAudio={!!sessao.audio_url}
+            dataHora={sessao.data_hora}
+            recordingStatus={sessao.recording_status ?? null}
           />
         </div>
         <div>

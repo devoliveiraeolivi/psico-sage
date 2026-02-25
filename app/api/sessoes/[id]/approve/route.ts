@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 import type { SessaoResumo, PacienteResumo, PacienteHistorico, HistoricoItem } from '@/lib/types'
 import { calcularProximaSessao } from '@/lib/next-session'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
-
-// Helper: Supabase client sem tipos rígidos para operações de update
-// (o client tipado não suporta JSONB complexos no update)
-async function getDb() {
-  return await createClient() as any
-}
+import { decryptJsonField, encryptJsonField } from '@/lib/supabase/encrypt'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
 
 export async function POST(
   request: NextRequest,
@@ -18,7 +14,11 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await getDb()
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     // Buscar sessão com dados do paciente
     const { data: sessao, error: fetchError } = await db
@@ -38,26 +38,30 @@ export async function POST(
       )
     }
 
-    const resumo = sessao.resumo as SessaoResumo | null
+    const resumo = decryptJsonField<SessaoResumo>(sessao.resumo)
     const paciente = sessao.pacientes
     if (!resumo || !paciente) {
       return NextResponse.json({ error: 'Resumo ou paciente não encontrado' }, { status: 400 })
     }
 
+    // Decrypt patient data (may be encrypted)
+    const pacienteResumoDecrypted = decryptJsonField<PacienteResumo>(paciente.resumo)
+    const pacienteHistoricoDecrypted = decryptJsonField<PacienteHistorico>(paciente.historico)
+
     // Build updated patient data (complex JSONB manipulation stays in TypeScript)
     const allAlertas = [
-      ...(resumo.alertas?.urgentes || []),
-      ...(resumo.alertas?.atencao || []),
+      ...(resumo.pontos_atencao?.urgentes || []),
+      ...(resumo.pontos_atencao?.monitorar || []),
     ]
     const novoResumo: PacienteResumo = {
-      ...((paciente.resumo as PacienteResumo) || {}),
-      sintese: resumo.resumo_sessao?.sintese || undefined,
-      humor: resumo.estado_mental_sessao?.humor || undefined,
-      tarefas: resumo.plano_metas?.tarefas_novas?.join('; ') || undefined,
+      ...(pacienteResumoDecrypted || {}),
+      sintese: resumo.resumo?.sintese || undefined,
+      humor: resumo.estado_mental?.humor || undefined,
+      tarefas: resumo.estrategia_plano?.tarefas_novas?.join('; ') || undefined,
       alertas: allAlertas.length > 0 ? allAlertas.join('; ') : undefined,
     }
 
-    const historicoAtual = (paciente.historico as PacienteHistorico) || {}
+    const historicoAtual = pacienteHistoricoDecrypted || {}
     const now = new Date().toISOString()
     const baseItem: Omit<HistoricoItem, 'valor'> = {
       data: now,
@@ -67,25 +71,25 @@ export async function POST(
 
     const novoHistorico: PacienteHistorico = { ...historicoAtual }
 
-    if (resumo.estado_mental_sessao?.humor) {
+    if (resumo.estado_mental?.humor) {
       novoHistorico.humor = [
         ...(historicoAtual.humor || []),
-        { ...baseItem, valor: resumo.estado_mental_sessao.humor },
+        { ...baseItem, valor: resumo.estado_mental.humor },
       ]
     }
 
-    // mudancas_observadas feed insights until aggregator AI replaces this
-    if (resumo.resumo_sessao?.mudancas_observadas?.length) {
+    // mudancas_positivas feed insights until aggregator AI replaces this
+    if (resumo.mudancas_padroes?.mudancas_positivas?.length) {
       novoHistorico.insights = [
         ...(historicoAtual.insights || []),
-        ...resumo.resumo_sessao.mudancas_observadas.map((i) => ({ ...baseItem, valor: i })),
+        ...resumo.mudancas_padroes.mudancas_positivas.map((i) => ({ ...baseItem, valor: i })),
       ]
     }
 
-    if (resumo.plano_metas?.tarefas_novas?.length) {
+    if (resumo.estrategia_plano?.tarefas_novas?.length) {
       novoHistorico.tarefas = [
         ...(historicoAtual.tarefas || []),
-        ...resumo.plano_metas.tarefas_novas.map((t) => ({ ...baseItem, valor: t })),
+        ...resumo.estrategia_plano.tarefas_novas.map((t) => ({ ...baseItem, valor: t })),
       ]
     }
 
@@ -97,11 +101,12 @@ export async function POST(
     }
 
     // Atomic approve: update session + patient in a single DB transaction
+    // Encrypt sensitive fields before persisting
     const { error: rpcError } = await db.rpc('approve_session_atomic', {
       p_sessao_id: id,
       p_paciente_id: paciente.id,
-      p_paciente_resumo: novoResumo,
-      p_paciente_historico: novoHistorico,
+      p_paciente_resumo: encryptJsonField(novoResumo),
+      p_paciente_historico: encryptJsonField(novoHistorico),
     })
 
     if (rpcError) {
@@ -153,6 +158,11 @@ export async function POST(
       }
     }
 
+    // Bust Next.js cache so the UI reflects the new status immediately
+    revalidatePath('/sessoes')
+    revalidatePath(`/sessoes/${id}`)
+    revalidatePath('/dashboard')
+
     return NextResponse.json({ status: 'realizada', proximaSessao })
   } catch (error) {
     logger.error('Approve failed', { sessaoId: id, error: error instanceof Error ? error.message : 'unknown' })
@@ -172,7 +182,12 @@ export async function PATCH(
   const { id } = await params
 
   try {
-    const db = await getDb()
+    const { user: patchUser, db, error: patchAuthError } = await requireAuth()
+    if (patchAuthError) return patchAuthError
+
+    const patchOwnership = await requireSessionOwner(db, patchUser!.id, id)
+    if (patchOwnership.error) return patchOwnership.error
+
     const body = await request.json()
     const resumo = body.resumo as SessaoResumo
 
@@ -182,11 +197,12 @@ export async function PATCH(
 
     const { error } = await db
       .from('sessoes')
-      .update({ resumo })
+      .update({ resumo: encryptJsonField(resumo) })
       .eq('id', id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      logger.error('Edit resumo DB failed', { sessaoId: id, error: error.message })
+      return NextResponse.json({ error: 'Erro ao salvar edição' }, { status: 500 })
     }
 
     return NextResponse.json({ resumo })

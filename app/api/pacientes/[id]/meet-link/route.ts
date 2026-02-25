@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { createPermanentMeetLink } from '@/lib/google/calendar'
+import { requireAuth, requirePatientOwner } from '@/lib/utils/auth'
+import { createPermanentMeetLink, GoogleAuthExpiredError } from '@/lib/google/calendar'
+import { decryptTextField } from '@/lib/supabase/encrypt'
+import { logger } from '@/lib/utils/logger'
 
 export async function GET(
   request: NextRequest,
@@ -9,24 +11,28 @@ export async function GET(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
 
-    const { data: paciente, error } = await db
+    const ownership = await requirePatientOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
+
+    const { data: paciente, error } = await (db as any)
       .from('pacientes')
-      .select('meet_link, meet_calendar_event_id')
+      .select('video_link, video_calendar_event_id')
       .eq('id', id)
-      .single()
+      .single() as { data: { video_link: string | null; video_calendar_event_id: string | null } | null; error: any }
 
     if (error || !paciente) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
 
     return NextResponse.json({
-      meetLink: paciente.meet_link,
-      calendarEventId: paciente.meet_calendar_event_id,
+      videoLink: paciente.video_link,
+      calendarEventId: paciente.video_calendar_event_id,
     })
   } catch (error) {
-    console.error('Erro ao buscar Meet link:', error)
+    logger.error('Erro ao buscar video link', { pacienteId: id, error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
@@ -38,83 +44,168 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requirePatientOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     // Buscar paciente
-    const { data: paciente, error: fetchError } = await db
+    const { data: paciente, error: fetchError } = await (db as any)
       .from('pacientes')
-      .select('id, nome, user_id, meet_link')
+      .select('id, nome, user_id, video_link')
       .eq('id', id)
-      .single()
+      .single() as { data: { id: string; nome: string; user_id: string; video_link: string | null } | null; error: any }
 
     if (fetchError || !paciente) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
 
-    // Verificar se já existe (a menos que force=true)
-    let force = false
-    try {
-      const body = await request.json()
-      force = body.force === true
-    } catch {
-      // Sem body é ok
-    }
-
-    if (paciente.meet_link && !force) {
-      return NextResponse.json({
-        meetLink: paciente.meet_link,
-        alreadyExisted: true,
-      })
-    }
-
-    // Buscar refresh token do terapeuta
+    // Buscar configurações de vídeo do terapeuta
     const { data: usuario } = await db
       .from('usuarios')
-      .select('google_refresh_token')
+      .select('google_refresh_token, video_plataforma, video_modo_link')
       .eq('id', paciente.user_id)
       .single()
 
-    if (!usuario?.google_refresh_token) {
+    const plataforma = usuario?.video_plataforma || 'nenhum'
+    const modoLink = usuario?.video_modo_link || 'por_paciente'
+
+    // Não gera link por paciente no modo link_fixo
+    if (modoLink === 'link_fixo') {
       return NextResponse.json(
-        { error: 'google_not_connected', message: 'Conta Google não vinculada. Conecte nas Configurações.' },
+        { error: 'link_fixo_mode', message: 'No modo link fixo, o link é configurado em Configurações.' },
         { status: 400 }
       )
     }
 
-    // Gerar link permanente
-    const result = await createPermanentMeetLink(usuario.google_refresh_token, {
-      patientName: paciente.nome,
-    })
+    let body: any = {}
+    try {
+      body = await request.json()
+    } catch {
+      // Sem body é ok
+    }
 
-    if (!result.meetLink) {
+    const force = body.force === true
+
+    // Plataforma externa: aceitar link manual no body
+    if (plataforma === 'externo') {
+      const link = body.link as string | undefined
+      if (link) {
+        try {
+          const parsed = new URL(link.trim())
+          if (!['https:', 'http:'].includes(parsed.protocol)) {
+            return NextResponse.json({ error: 'URL inválida. Use https://...' }, { status: 400 })
+          }
+        } catch {
+          return NextResponse.json({ error: 'URL inválida. Use https://...' }, { status: 400 })
+        }
+
+        const { error: updateError } = await db
+          .from('pacientes')
+          .update({ video_link: link.trim() })
+          .eq('id', id)
+
+        if (updateError) {
+          logger.error('Erro ao salvar video link', { pacienteId: id, error: updateError.message })
+          return NextResponse.json({ error: 'Erro ao salvar link de videochamada' }, { status: 500 })
+        }
+
+        return NextResponse.json({ videoLink: link.trim() })
+      }
+
+      // Se não mandou link e já existe, retornar o existente
+      if (paciente.video_link && !force) {
+        return NextResponse.json({ videoLink: paciente.video_link, alreadyExisted: true })
+      }
+
       return NextResponse.json(
-        { error: 'meet_failed', message: 'Google não retornou um link do Meet.' },
-        { status: 500 }
+        { error: 'link_required', message: 'Envie o campo "link" no body para salvar o link de videochamada.' },
+        { status: 400 }
       )
     }
 
-    // Salvar no paciente
-    const { error: updateError } = await db
-      .from('pacientes')
-      .update({
-        meet_link: result.meetLink,
-        meet_calendar_event_id: result.calendarEventId,
-      })
-      .eq('id', id)
+    // Google Meet: gerar via Calendar API
+    if (plataforma === 'google_meet') {
+      if (paciente.video_link && !force) {
+        return NextResponse.json({
+          videoLink: paciente.video_link,
+          alreadyExisted: true,
+        })
+      }
 
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
+      const rawToken = decryptTextField(usuario?.google_refresh_token)
+      if (!rawToken) {
+        return NextResponse.json(
+          { error: 'google_not_connected', message: 'Conta Google não vinculada. Conecte nas Configurações.' },
+          { status: 400 }
+        )
+      }
+
+      const result = await createPermanentMeetLink(rawToken, {
+        patientName: paciente.nome,
+      })
+
+      if (!result.meetLink) {
+        return NextResponse.json(
+          { error: 'meet_failed', message: 'Google não retornou um link do Meet.' },
+          { status: 500 }
+        )
+      }
+
+      const { error: updateError } = await db
+        .from('pacientes')
+        .update({
+          video_link: result.meetLink,
+          video_calendar_event_id: result.calendarEventId,
+        })
+        .eq('id', id)
+
+      if (updateError) {
+        logger.error('Erro ao salvar Meet link', { pacienteId: id, error: updateError.message })
+        return NextResponse.json({ error: 'Erro ao salvar link de videochamada' }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        videoLink: result.meetLink,
+        calendarEventId: result.calendarEventId,
+      })
     }
 
-    return NextResponse.json({
-      meetLink: result.meetLink,
-      calendarEventId: result.calendarEventId,
-    })
-  } catch (error: any) {
-    const detail = error?.response?.data?.error?.message || error?.message || 'Erro desconhecido'
-    console.error('Erro ao gerar Meet link permanente:', detail, error)
+    // Plataforma 'nenhum'
     return NextResponse.json(
-      { error: 'Erro ao gerar link do Meet', message: detail },
+      { error: 'video_not_configured', message: 'Videochamada não configurada. Acesse Configurações.' },
+      { status: 400 }
+    )
+  } catch (error: any) {
+    if (error instanceof GoogleAuthExpiredError) {
+      // Limpar token expirado
+      try {
+        const { db: cleanupDb } = await requireAuth()
+        const { data: pac } = await cleanupDb
+          .from('pacientes')
+          .select('user_id')
+          .eq('id', id)
+          .single()
+        if (pac?.user_id) {
+          await cleanupDb
+            .from('usuarios')
+            .update({ google_refresh_token: null, google_email: null, google_connected_at: null })
+            .eq('id', pac.user_id)
+        }
+      } catch {
+        // Best-effort cleanup
+      }
+      return NextResponse.json(
+        { error: 'google_not_connected', message: 'Acesso Google expirou. Reconecte sua conta nas Configurações.' },
+        { status: 400 }
+      )
+    }
+
+    const detail = error?.response?.data?.error?.message || error?.message || 'Erro desconhecido'
+    logger.error('Erro ao gerar video link', { pacienteId: id, error: detail })
+    return NextResponse.json(
+      { error: 'Erro ao gerar link de videochamada' },
       { status: 500 }
     )
   }

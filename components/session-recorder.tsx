@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import type { RecordingStatus } from '@/lib/types'
+import type { RecordingStatus, VideoPlataforma } from '@/lib/types'
 import { RecordingStatusIndicator } from './recording-status'
 
 interface SessionRecorderProps {
@@ -9,8 +9,10 @@ interface SessionRecorderProps {
   status: string
   recordingStatus?: RecordingStatus | null
   processingError?: string | null
-  meetLink?: string | null
+  videoLink?: string | null
   hasAudio?: boolean
+  videoPlataforma?: VideoPlataforma
+  videoPlataformaNome?: string | null
 }
 
 type SessionMode = 'meet' | 'presencial'
@@ -20,8 +22,10 @@ export function SessionRecorder({
   status,
   recordingStatus: initialRecordingStatus,
   processingError: initialError,
-  meetLink: initialMeetLink,
+  videoLink: initialVideoLink,
   hasAudio = false,
+  videoPlataforma = 'nenhum',
+  videoPlataformaNome = null,
 }: SessionRecorderProps) {
   const [mode, setMode] = useState<SessionMode | null>(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -34,6 +38,7 @@ export function SessionRecorder({
   const [googleNotConnected, setGoogleNotConnected] = useState(false)
 
   const [isUploading, setIsUploading] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -44,41 +49,48 @@ export function SessionRecorder({
   const meetWindowRef = useRef<Window | null>(null)
   const meetPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const stoppingRef = useRef(false)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Poll session status for background processing updates
+  // Poll session status with progressive backoff (3s → 5s → 10s)
   const startPolling = useCallback(() => {
     if (pollRef.current) return // Already polling
 
     setPipelineStatus('transcribing') // Show initial processing state
 
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/sessoes/${sessaoId}/status`)
-        if (!res.ok) return
+    let attempts = 0
 
-        const data = await res.json()
-        const { recording_status, processing_error } = data
+    function scheduleNext() {
+      attempts++
+      const delay = attempts <= 5 ? 3000 : attempts <= 15 ? 5000 : 10000
+      pollRef.current = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/sessoes/${sessaoId}/status`)
+          if (!res.ok) { scheduleNext(); return }
 
-        // Update UI with current status
-        if (recording_status) {
-          setPipelineStatus(recording_status)
+          const data = await res.json()
+          const { recording_status, processing_error } = data
+
+          if (recording_status) setPipelineStatus(recording_status)
+
+          if (recording_status === 'done') {
+            pollRef.current = null
+            setTimeout(() => window.location.reload(), 1500)
+            return
+          } else if (recording_status === 'error') {
+            pollRef.current = null
+            setError(processing_error || 'Erro no processamento')
+            return
+          }
+        } catch {
+          // Network error — keep polling, it might recover
         }
+        scheduleNext()
+      }, delay) as any
+    }
 
-        if (recording_status === 'done') {
-          // Processing complete — reload to show results
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-          setTimeout(() => window.location.reload(), 1500)
-        } else if (recording_status === 'error') {
-          // Processing failed
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
-          setError(processing_error || 'Erro no processamento')
-        }
-      } catch {
-        // Network error — keep polling, it might recover
-      }
-    }, 3000) // Poll every 3 seconds
+    scheduleNext()
   }, [sessaoId])
 
   // Re-trigger processing for failed sessions
@@ -116,11 +128,32 @@ export function SessionRecorder({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (meetPollRef.current) clearInterval(meetPollRef.current)
-      if (pollRef.current) clearInterval(pollRef.current)
+      if (pollRef.current) clearTimeout(pollRef.current as any)
       streamRef.current?.getTracks().forEach((t) => t.stop())
       displayStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [])
+
+  // Warn before closing tab during recording or upload
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (isRecording || isUploading) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isRecording, isUploading])
+
+  /** Wraps a media request with a timeout so isStarting doesn't hang forever */
+  function withMediaTimeout<T>(promise: Promise<T>, ms = 15_000): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Permissão de mídia expirou. Tente novamente.')), ms)
+      ),
+    ])
+  }
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -131,7 +164,8 @@ export function SessionRecorder({
   }
 
   const stopRecording = useCallback(async () => {
-    if (!mediaRecorderRef.current) return
+    if (!mediaRecorderRef.current || stoppingRef.current) return
+    stoppingRef.current = true
 
     // Parar timer e polling do Meet
     if (timerRef.current) {
@@ -177,12 +211,13 @@ export function SessionRecorder({
           setError(err instanceof Error ? err.message : 'Erro no processamento')
         }
 
+        stoppingRef.current = false
         resolve()
       }
 
       recorder.stop()
     })
-  }, [sessaoId])
+  }, [sessaoId, startPolling])
 
   const startRecording = useCallback(async (selectedMode: SessionMode) => {
     setIsStarting(true)
@@ -192,28 +227,18 @@ export function SessionRecorder({
       // 1. Capturar áudio ANTES de tudo (pedir permissão ao usuário)
       let combinedStream: MediaStream
 
-      if (selectedMode === 'meet') {
-        // Telehealth: mic + áudio da aba do Meet
-        try {
-          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          streamRef.current = micStream
-          combinedStream = micStream
-        } catch {
-          throw new Error('Permissão de microfone negada')
-        }
-      } else {
-        // Presencial: só microfone
-        try {
-          const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-          streamRef.current = micStream
-          combinedStream = micStream
-        } catch {
-          throw new Error('Permissão de microfone negada')
-        }
+      try {
+        const micStream = await withMediaTimeout(
+          navigator.mediaDevices.getUserMedia({ audio: true })
+        )
+        streamRef.current = micStream
+        combinedStream = micStream
+      } catch {
+        throw new Error('Permissão de microfone negada')
       }
 
       // 2. Iniciar sessão no backend (pular se já está em andamento)
-      let meetLink: string | null = null
+      let videoLink: string | null = null
 
       if (status !== 'em_andamento') {
         const startRes = await fetch(`/api/sessoes/${sessaoId}/start`, {
@@ -236,20 +261,22 @@ export function SessionRecorder({
         }
 
         const result = await startRes.json()
-        meetLink = result.meetLink
+        videoLink = result.videoLink
       }
 
-      // 3. Abrir Google Meet se modo telehealth (só na primeira vez)
-      if (selectedMode === 'meet' && meetLink) {
-        const meetWindow = window.open(meetLink, '_blank')
+      // 3. Abrir videochamada se modo telehealth (só na primeira vez)
+      if (selectedMode === 'meet' && videoLink) {
+        const meetWindow = window.open(videoLink, '_blank')
         meetWindowRef.current = meetWindow
 
         // Tentar capturar áudio da aba do Meet (após abrir)
         try {
-          const displayStream = await navigator.mediaDevices.getDisplayMedia({
-            audio: true,
-            video: false,
-          } as any)
+          const displayStream = await withMediaTimeout(
+            navigator.mediaDevices.getDisplayMedia({
+              audio: true,
+              video: false,
+            } as any)
+          )
           displayStreamRef.current = displayStream
 
           // Combinar mic + display audio
@@ -272,7 +299,6 @@ export function SessionRecorder({
           })
         } catch {
           // Se não conseguir capturar tab audio, usar só o mic
-          console.warn('Não foi possível capturar áudio da aba. Usando apenas microfone.')
         }
       }
 
@@ -322,21 +348,7 @@ export function SessionRecorder({
     }
   }, [sessaoId, stopRecording])
 
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    // Ask for confirmation if there's already an audio recording
-    if (hasAudio) {
-      const confirmed = window.confirm(
-        'Esta sessão já possui uma gravação. Deseja substituí-la pelo novo arquivo?'
-      )
-      if (!confirmed) {
-        if (fileInputRef.current) fileInputRef.current.value = ''
-        return
-      }
-    }
-
+  const doUpload = useCallback(async (file: File) => {
     setIsUploading(true)
     setError(null)
 
@@ -375,7 +387,52 @@ export function SessionRecorder({
       // Resetar input para permitir re-upload do mesmo arquivo
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
-  }, [sessaoId, status, hasAudio, startPolling])
+  }, [sessaoId, status, startPolling])
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (hasAudio) {
+      setPendingFile(file)
+      return
+    }
+
+    doUpload(file)
+  }, [hasAudio, doUpload])
+
+  const confirmReplace = useCallback(() => {
+    if (pendingFile) {
+      doUpload(pendingFile)
+      setPendingFile(null)
+    }
+  }, [pendingFile, doUpload])
+
+  const cancelReplace = useCallback(() => {
+    setPendingFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [])
+
+  // Confirmation banner for replacing existing audio
+  const replaceConfirmBanner = pendingFile ? (
+    <div className="flex items-center justify-between mt-3 pt-3 border-t border-amber-200 bg-amber-50 -mx-4 px-4 pb-3">
+      <p className="text-xs text-amber-700">Substituir gravação existente por &quot;{pendingFile.name}&quot;?</p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={confirmReplace}
+          className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+        >
+          Confirmar
+        </button>
+        <button
+          onClick={cancelReplace}
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  ) : null
 
   // Reusable upload strip shown across multiple states
   const uploadStrip = (
@@ -497,9 +554,9 @@ export function SessionRecorder({
             Sessão em andamento. A gravação não está ativa nesta aba.
           </p>
           <div className="flex items-center gap-2">
-            {initialMeetLink && (
+            {initialVideoLink && (
               <a
-                href={initialMeetLink}
+                href={initialVideoLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1.5"
@@ -507,7 +564,7 @@ export function SessionRecorder({
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                   <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Reabrir Meet
+                {videoPlataforma === 'google_meet' ? 'Reabrir Meet' : 'Reabrir Videochamada'}
               </a>
             )}
             <button
@@ -535,7 +592,9 @@ export function SessionRecorder({
             <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
             <div>
               <p className="text-sm font-medium text-red-800">
-                Gravando {mode === 'meet' ? '(Google Meet)' : '(Presencial)'}
+                Gravando {mode === 'meet'
+                  ? `(${videoPlataforma === 'google_meet' ? 'Google Meet' : videoPlataformaNome || 'Videochamada'})`
+                  : '(Presencial)'}
               </p>
               <p className="text-xl font-mono font-bold text-red-700 mt-0.5">
                 {formatTime(recordingTime)}
@@ -564,6 +623,7 @@ export function SessionRecorder({
         <RecordingStatusIndicator status={pipelineStatus} error={error} onReprocess={handleReprocess} />
         {!isActivelyProcessing && (
           <div className="bg-gray-50 border border-gray-200 rounded-b-xl px-4 pb-3 -mt-1 pt-1 rounded-t-none">
+            {replaceConfirmBanner}
             {uploadStrip}
           </div>
         )}
@@ -571,8 +631,8 @@ export function SessionRecorder({
     )
   }
 
-  // Google não conectado — mostrar prompt
-  if (googleNotConnected) {
+  // Google não conectado — mostrar prompt (apenas para Google Meet)
+  if (googleNotConnected && videoPlataforma === 'google_meet') {
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
         <div className="flex items-start gap-3">
@@ -611,48 +671,68 @@ export function SessionRecorder({
   }
 
   // Estado inicial — escolher modo
+  const videoButtonLabel = videoPlataforma === 'google_meet'
+    ? 'Google Meet'
+    : videoPlataformaNome || 'Videochamada'
+
   return (
     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3.5">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-blue-900">Iniciar Sessão</h3>
           <p className="text-xs text-blue-600 mt-0.5">
-            Escolha o modo e a gravação começará automaticamente
+            {videoPlataforma === 'nenhum'
+              ? 'A gravação começará automaticamente'
+              : 'Escolha o modo e a gravação começará automaticamente'}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => startRecording('presencial')}
             disabled={isStarting}
-            className="px-3.5 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+            className={`px-3.5 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 ${
+              videoPlataforma === 'nenhum'
+                ? 'text-white bg-blue-600 hover:bg-blue-700'
+                : 'text-blue-700 bg-white border border-blue-200 hover:bg-blue-50'
+            }`}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-            </svg>
-            Presencial
-          </button>
-          <button
-            onClick={() => startRecording('meet')}
-            disabled={isStarting}
-            className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            {isStarting ? (
+            {isStarting && videoPlataforma === 'nenhum' ? (
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
             ) : (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
               </svg>
             )}
-            Google Meet
+            Presencial
           </button>
+          {videoPlataforma !== 'nenhum' && (
+            <button
+              onClick={() => startRecording('meet')}
+              disabled={isStarting}
+              className="px-3.5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {isStarting ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                </svg>
+              )}
+              {videoButtonLabel}
+            </button>
+          )}
         </div>
       </div>
 
       {/* Upload manual */}
-      {uploadStrip}
+      {replaceConfirmBanner}
+            {uploadStrip}
 
       {error && (
         <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg">

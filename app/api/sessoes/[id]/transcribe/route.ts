@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
 import { createClient } from '@/lib/supabase/server'
 import { transcribeAudio } from '@/lib/transcription/groq'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
@@ -12,12 +13,14 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     // Rate limiting
-    const { data: { user } } = await db.auth.getUser()
-    const userId = user?.id || 'anonymous'
-    const rl = checkRateLimit(`transcribe:${userId}`, RATE_LIMITS.transcribe)
+    const rl = checkRateLimit(`transcribe:${user!.id}`, RATE_LIMITS.transcribe)
     if (!rl.success) {
       return NextResponse.json(
         { error: 'Muitas requisições. Tente novamente em breve.', retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) },
@@ -52,13 +55,13 @@ export async function POST(
         .from('sessoes')
         .update({
           recording_status: 'error',
-          processing_error: `Download falhou: ${downloadError?.message}`,
+          processing_error: 'Download do áudio falhou',
         })
         .eq('id', id)
       return NextResponse.json({ error: 'Erro ao baixar áudio' }, { status: 500 })
     }
 
-    // Convert Blob directly to Buffer — single copy instead of ArrayBuffer → Uint8Array → Blob
+    // Convert Blob directly to Buffer
     const audioBuffer = Buffer.from(await audioData.arrayBuffer())
     logger.info('Transcription starting', { sessaoId: id, audioSizeMB: +(audioBuffer.length / 1024 / 1024).toFixed(1) })
     const result = await transcribeAudio(audioBuffer, sessao.audio_url)
@@ -78,18 +81,24 @@ export async function POST(
       textLength: result.fullText.length,
     })
   } catch (error) {
-    const db = await createClient() as any
-    const message = error instanceof Error ? error.message : 'Erro desconhecido'
-    await db
-      .from('sessoes')
-      .update({
-        recording_status: 'error',
-        processing_error: `Transcrição falhou: ${message}`,
-      })
-      .eq('id', id)
+    // Best-effort: update error state in DB
+    try {
+      const db = await createClient() as any
+      const message = error instanceof Error ? error.message : 'Erro desconhecido'
+      await db
+        .from('sessoes')
+        .update({
+          recording_status: 'error',
+          processing_error: `Transcrição falhou: ${message}`,
+        })
+        .eq('id', id)
+    } catch {
+      // DB update failed — already logging below
+    }
 
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
     logger.error('Transcription failed', { sessaoId: id, error: message })
     if (error instanceof Error) captureException(error, { sessaoId: id, operation: 'transcribe' })
-    return NextResponse.json({ error: message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro ao transcrever áudio' }, { status: 500 })
   }
 }

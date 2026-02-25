@@ -1,10 +1,12 @@
 import { formatTime, formatDate } from '@/lib/utils'
 import Link from 'next/link'
-import { UnifiedCalendar } from '@/components/unified-calendar'
+import { UnifiedCalendar, CalendarLegend } from '@/components/unified-calendar'
 import type { CalendarSession } from '@/components/unified-calendar'
 import { ValidarResumosSidebar } from '@/components/validar-resumos-sidebar'
 import { createClient } from '@/lib/supabase/server'
 import type { SessaoHoje, Sessao } from '@/lib/types'
+import { decryptJsonField } from '@/lib/supabase/encrypt'
+import { DashboardTourWrapper } from '@/components/dashboard-tour-wrapper'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -31,10 +33,17 @@ export default async function DashboardPage() {
     .from('pacientes')
     .select('id, nome') as { data: { id: string; nome: string }[] | null }
 
-  const sessoesHoje = sessoesHojeData || []
-  const sessoesPendentes = sessoesPendentesData || []
+  const sessoesHoje = (sessoesHojeData || []).map(s => {
+    if ((s as any).paciente_resumo) (s as any).paciente_resumo = decryptJsonField((s as any).paciente_resumo)
+    return s
+  })
+  const sessoesPendentes = (sessoesPendentesData || []).map(s => {
+    if (s.resumo) (s as any).resumo = decryptJsonField(s.resumo)
+    return s
+  })
   const pacientes = pacientesData || []
-  const proximaSessao = sessoesHoje[0]
+  const agora = new Date().toISOString()
+  const proximaSessao = sessoesHoje.find(s => s.status === 'agendada' && s.data_hora >= agora) || null
   const pacienteMap = new Map(pacientes.map(p => [p.id, p]))
 
   const pendentesData = sessoesPendentes.map(s => ({
@@ -97,6 +106,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-8 overflow-hidden">
+      <DashboardTourWrapper />
+
       {/* Header com saudação */}
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{saudacao}</h1>
@@ -106,7 +117,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Métricas rápidas */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div id="dashboard-metrics" className="grid gap-4 sm:grid-cols-3">
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -206,21 +217,26 @@ export default async function DashboardPage() {
             </div>
           )}
 
-          <UnifiedCalendar
-            sessions={calendarSessions}
-            views={['dia', 'semana']}
-            defaultView="dia"
-            compact
-            sessionHref="/sessoes"
-            hourStart={hourStart}
-            hourEnd={hourEnd}
-            fillHeight
-          />
+          <div id="dashboard-calendar" className="flex-1 min-h-0 flex flex-col">
+            <UnifiedCalendar
+              sessions={calendarSessions}
+              views={['dia', 'semana']}
+              defaultView="dia"
+              compact
+              sessionHref="/sessoes"
+              hourStart={hourStart}
+              hourEnd={hourEnd}
+              fillHeight
+            />
+            <CalendarLegend />
+          </div>
         </div>
 
         {/* Coluna lateral */}
         <div className="space-y-3 overflow-y-auto min-h-0">
-          <ValidarResumosSidebar sessoes={pendentesData} />
+          <div id="dashboard-validacoes">
+            <ValidarResumosSidebar sessoes={pendentesData} />
+          </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Esta Semana</h2>
@@ -240,7 +256,7 @@ export default async function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div id="dashboard-quick-actions" className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Ações Rápidas</h2>
             <div className="space-y-1">
               <Link href="/pacientes/novo" className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">

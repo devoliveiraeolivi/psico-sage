@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatDateTime } from '@/lib/utils'
-import { ResumoTab } from './sessao-tabs'
-import type { SessaoResumo, PessoaMencionada, ProgressoMeta } from '@/lib/types'
+import { useToast } from './toast'
+import { ProntuarioView } from './prontuario-view'
+import type { SessaoResumo, PessoaCentral, PessoaSecundaria, ProgressoMeta } from '@/lib/types'
 
 interface ApprovalModalProps {
   open: boolean
@@ -22,16 +23,19 @@ function cloneResumo(r: SessaoResumo): SessaoResumo {
 
 function emptyResumo(): SessaoResumo {
   return {
-    resumo_sessao: { sintese: '', pontos_principais: [], mudancas_observadas: [], proximos_passos: [] },
-    queixa_sintomatologia: { queixa_sessao: null, sintomas_relatados: [], intensidade: null, frequencia: null, gatilhos: [], estrategias_que_ajudaram: [], evidencias: [] },
-    estado_mental_sessao: { humor: null, afeto: null, pensamento_curso: null, pensamento_conteudo: { resumo: null, evidencias: [] }, insight: null, juizo_critica: null, sensopercepcao: null, risco_suicida: 'não avaliado', risco_heteroagressivo: 'não avaliado' },
-    pessoas_mencionadas: [],
-    intervencoes: { objetivos_sessao: null, tecnicas_utilizadas: [], temas_trabalhados: [], resposta_do_paciente: null },
-    plano_metas: { progresso_relatado: [], tarefas_novas: [], metas_acordadas: null, foco_proxima_sessao: null },
-    medicacao_sessao: { medicacoes_mencionadas: null, adesao: null, efeitos_relatados: null, mudancas: null, encaminhamentos: null },
-    fatos_novos_biograficos: [],
-    alertas: { urgentes: [], atencao: [], acompanhar: [] },
-    evolucao_crp: '',
+    resumo: { sintese: '', pontos_principais: [] },
+    pontos_atencao: { urgentes: [], monitorar: [], acompanhar_proximas: [] },
+    estrategia_plano: { tarefas_novas: [], metas_acordadas: null, foco_proxima_sessao: null },
+    evolucao_cfp: '',
+    queixas_sintomas: { queixa_sessao: null, sintomas_relatados: [], intensidade: null, frequencia: null, fatores_agravantes: [], fatores_alivio: [] },
+    estado_mental: { humor: null, afeto: null, pensamento_curso: null, pensamento_conteudo: null, insight: null, juizo_critica: null, risco_suicida: 'não avaliado', risco_heteroagressivo: 'não avaliado', outras_observacoes: null },
+    mudancas_padroes: { mudancas_positivas: [], padroes_identificados: [], crencas_centrais: [], defesas_predominantes: [], recursos_paciente: [], persistencias: [] },
+    progresso_tarefas: [],
+    pessoas_centrais: [],
+    pessoas_secundarias: [],
+    farmacologia: { medicacoes: null, adesao: null, efeitos_relatados: null, mudancas: null, encaminhamento_psiquiatrico: null },
+    intervencoes: { tecnicas_utilizadas: [], temas_trabalhados: [], observacoes_processo: null },
+    anamnese: { infancia: null, adolescencia: null, vida_adulta: null, familia_origem: null, relacionamentos: null, marcos_vida: null, historico_tratamentos: null },
   }
 }
 
@@ -69,23 +73,35 @@ export function ApprovalModal({
   dataHora,
 }: ApprovalModalProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [mode, setMode] = useState<'review' | 'edit'>('review')
   const [isApproving, setIsApproving] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editedResumo, setEditedResumo] = useState<SessaoResumo>(resumo ? cloneResumo(resumo) : emptyResumo())
+  const [displayedResumo, setDisplayedResumo] = useState<SessaoResumo | null>(resumo)
+  const [showAiAdjust, setShowAiAdjust] = useState(false)
+  const [aiInstrucoes, setAiInstrucoes] = useState('')
+  const [isAdjusting, setIsAdjusting] = useState(false)
+  const [adjustError, setAdjustError] = useState<string | null>(null)
+  const [adjustResult, setAdjustResult] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
 
-  // Reset state when modal opens with new data
   useEffect(() => {
     if (open) {
       setMode('review')
       setEditedResumo(resumo ? cloneResumo(resumo) : emptyResumo())
+      setDisplayedResumo(resumo)
+      setShowAiAdjust(false)
+      setAiInstrucoes('')
+      setAdjustError(null)
+      setAdjustResult(null)
+      setApproveError(null)
     }
   }, [open, resumo])
 
-  // Close on Escape
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose()
-  }, [onClose])
+    if (e.key === 'Escape' && !isAdjusting) onClose()
+  }, [onClose, isAdjusting])
 
   useEffect(() => {
     if (open) {
@@ -100,7 +116,6 @@ export function ApprovalModal({
 
   if (!open) return null
 
-  // Helpers for nested updates
   const upd = (section: keyof SessaoResumo, field: string, value: unknown) => {
     setEditedResumo(prev => ({
       ...prev,
@@ -113,17 +128,18 @@ export function ApprovalModal({
 
   const handleApprove = async () => {
     setIsApproving(true)
+    setApproveError(null)
     try {
       const res = await fetch(`/api/sessoes/${sessaoId}/approve`, { method: 'POST' })
       if (!res.ok) {
-        const data = await res.json()
-        console.error('Erro ao aprovar:', data.error)
+        const data = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
+        setApproveError(data.error || 'Falha ao aprovar sessão')
         return
       }
       onClose()
       router.refresh()
     } catch (err) {
-      console.error('Erro ao aprovar sessão:', err)
+      setApproveError('Erro de conexão. Tente novamente.')
     } finally {
       setIsApproving(false)
     }
@@ -138,36 +154,85 @@ export function ApprovalModal({
         body: JSON.stringify({ resumo: editedResumo }),
       })
       if (!res.ok) {
-        const data = await res.json()
-        console.error('Erro ao salvar:', data.error)
+        toast('Erro ao salvar edição. Tente novamente.', 'error')
         return
       }
+      setDisplayedResumo(editedResumo)
       setMode('review')
       router.refresh()
-    } catch (err) {
-      console.error('Erro ao salvar edição:', err)
+    } catch {
+      toast('Erro ao salvar edição. Tente novamente.', 'error')
     } finally {
       setIsSaving(false)
     }
   }
 
-  // Pessoa handlers
-  const addPessoa = () => {
+  const handleAiAdjust = async () => {
+    if (!aiInstrucoes.trim() || isAdjusting) return
+    setIsAdjusting(true)
+    setAdjustError(null)
+    try {
+      const res = await fetch(`/api/sessoes/${sessaoId}/ai-adjust`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instrucoes: aiInstrucoes.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setAdjustError(res.status === 429
+          ? 'Muitas requisições. Aguarde um momento.'
+          : data.error || 'Erro ao ajustar prontuário')
+        return
+      }
+      const data = await res.json()
+      setDisplayedResumo(data.resumo)
+      setAiInstrucoes('')
+      setShowAiAdjust(false)
+      setAdjustResult(data.descricao_ajustes || 'Ajuste realizado.')
+    } catch {
+      setAdjustError('Erro de conexão. Tente novamente.')
+    } finally {
+      setIsAdjusting(false)
+    }
+  }
+
+  // Pessoas centrais handlers
+  const addPessoaCentral = () => {
     setEditedResumo(prev => ({
       ...prev,
-      pessoas_mencionadas: [...prev.pessoas_mencionadas, { nome_usado: '', categoria: 'outros', tipo: 'outro', contexto: null, relevancia: 'secundaria', nota: '' }],
+      pessoas_centrais: [...prev.pessoas_centrais, { nome_usado: '', categoria: 'outros', tipo: 'outro', mencao: '' }],
     }))
   }
-  const updPessoa = (idx: number, field: keyof PessoaMencionada, value: string) => {
+  const updPessoaCentral = (idx: number, field: keyof PessoaCentral, value: string) => {
     setEditedResumo(prev => ({
       ...prev,
-      pessoas_mencionadas: prev.pessoas_mencionadas.map((p, i) => i === idx ? { ...p, [field]: value || (field === 'contexto' ? null : value) } : p),
+      pessoas_centrais: prev.pessoas_centrais.map((p, i) => i === idx ? { ...p, [field]: value } : p),
     }))
   }
-  const rmPessoa = (idx: number) => {
+  const rmPessoaCentral = (idx: number) => {
     setEditedResumo(prev => ({
       ...prev,
-      pessoas_mencionadas: prev.pessoas_mencionadas.filter((_, i) => i !== idx),
+      pessoas_centrais: prev.pessoas_centrais.filter((_, i) => i !== idx),
+    }))
+  }
+
+  // Pessoas secundarias handlers
+  const addPessoaSecundaria = () => {
+    setEditedResumo(prev => ({
+      ...prev,
+      pessoas_secundarias: [...prev.pessoas_secundarias, { nome_usado: '', tipo: 'outro', mencao: '' }],
+    }))
+  }
+  const updPessoaSecundaria = (idx: number, field: keyof PessoaSecundaria, value: string) => {
+    setEditedResumo(prev => ({
+      ...prev,
+      pessoas_secundarias: prev.pessoas_secundarias.map((p, i) => i === idx ? { ...p, [field]: value } : p),
+    }))
+  }
+  const rmPessoaSecundaria = (idx: number) => {
+    setEditedResumo(prev => ({
+      ...prev,
+      pessoas_secundarias: prev.pessoas_secundarias.filter((_, i) => i !== idx),
     }))
   }
 
@@ -175,30 +240,21 @@ export function ApprovalModal({
   const addProgresso = () => {
     setEditedResumo(prev => ({
       ...prev,
-      plano_metas: {
-        ...prev.plano_metas,
-        progresso_relatado: [...prev.plano_metas.progresso_relatado, { meta: '', status: 'em_andamento', observacao: '' }],
-      },
+      progresso_tarefas: [...prev.progresso_tarefas, { meta: '', status: 'em_andamento', observacao: '' }],
     }))
   }
   const updProgresso = (idx: number, field: keyof ProgressoMeta, value: string) => {
     setEditedResumo(prev => ({
       ...prev,
-      plano_metas: {
-        ...prev.plano_metas,
-        progresso_relatado: prev.plano_metas.progresso_relatado.map((p, i) =>
-          i === idx ? { ...p, [field]: value } : p
-        ),
-      },
+      progresso_tarefas: prev.progresso_tarefas.map((p, i) =>
+        i === idx ? { ...p, [field]: value } : p
+      ),
     }))
   }
   const rmProgresso = (idx: number) => {
     setEditedResumo(prev => ({
       ...prev,
-      plano_metas: {
-        ...prev.plano_metas,
-        progresso_relatado: prev.plano_metas.progresso_relatado.filter((_, i) => i !== idx),
-      },
+      progresso_tarefas: prev.progresso_tarefas.filter((_, i) => i !== idx),
     }))
   }
 
@@ -206,7 +262,7 @@ export function ApprovalModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden shadow-xl flex flex-col">
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden shadow-xl flex flex-col relative">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -236,26 +292,18 @@ export function ApprovalModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {mode === 'review' ? (
-            <ResumoTab resumo={resumo} jaRealizada={true} />
+            displayedResumo ? <ProntuarioView dados={displayedResumo} /> : <p className="text-sm text-gray-400 text-center py-8">Sem dados para exibir</p>
           ) : (
             <div className="space-y-3">
-              {/* Resumo da Sessão */}
+              {/* Resumo */}
               <EditSection title="Resumo da Sessão" defaultOpen>
                 <div>
                   <label className={labelCls}>Síntese</label>
-                  <textarea value={r.resumo_sessao.sintese} onChange={e => upd('resumo_sessao', 'sintese', e.target.value)} rows={2} className={textareaCls} placeholder="Frase resumindo a sessão..." />
+                  <textarea value={r.resumo.sintese} onChange={e => upd('resumo', 'sintese', e.target.value)} rows={2} className={textareaCls} placeholder="Frase resumindo a sessão..." />
                 </div>
                 <div>
                   <label className={labelCls}>Pontos Principais (um por linha)</label>
-                  <textarea value={r.resumo_sessao.pontos_principais.join('\n')} onChange={e => upd('resumo_sessao', 'pontos_principais', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Mudanças Observadas (um por linha)</label>
-                  <textarea value={r.resumo_sessao.mudancas_observadas.join('\n')} onChange={e => upd('resumo_sessao', 'mudancas_observadas', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Próximos Passos (um por linha)</label>
-                  <textarea value={r.resumo_sessao.proximos_passos.join('\n')} onChange={e => upd('resumo_sessao', 'proximos_passos', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                  <textarea value={r.resumo.pontos_principais.join('\n')} onChange={e => upd('resumo', 'pontos_principais', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
                 </div>
               </EditSection>
 
@@ -264,11 +312,11 @@ export function ApprovalModal({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>Humor</label>
-                    <input value={r.estado_mental_sessao.humor || ''} onChange={e => upd('estado_mental_sessao', 'humor', e.target.value || null)} className={inputCls} placeholder="ansioso, eutímico..." />
+                    <input value={r.estado_mental.humor || ''} onChange={e => upd('estado_mental', 'humor', e.target.value || null)} className={inputCls} placeholder="ansioso, eutímico..." />
                   </div>
                   <div>
                     <label className={labelCls}>Afeto</label>
-                    <select value={r.estado_mental_sessao.afeto || ''} onChange={e => upd('estado_mental_sessao', 'afeto', e.target.value || null)} className={inputCls}>
+                    <select value={r.estado_mental.afeto || ''} onChange={e => upd('estado_mental', 'afeto', e.target.value || null)} className={inputCls}>
                       <option value="">—</option>
                       <option value="congruente">congruente</option>
                       <option value="incongruente">incongruente</option>
@@ -278,7 +326,7 @@ export function ApprovalModal({
                   </div>
                   <div>
                     <label className={labelCls}>Pensamento (curso)</label>
-                    <select value={r.estado_mental_sessao.pensamento_curso || ''} onChange={e => upd('estado_mental_sessao', 'pensamento_curso', e.target.value || null)} className={inputCls}>
+                    <select value={r.estado_mental.pensamento_curso || ''} onChange={e => upd('estado_mental', 'pensamento_curso', e.target.value || null)} className={inputCls}>
                       <option value="">—</option>
                       <option value="normal">normal</option>
                       <option value="acelerado">acelerado</option>
@@ -288,7 +336,7 @@ export function ApprovalModal({
                   </div>
                   <div>
                     <label className={labelCls}>Insight</label>
-                    <select value={r.estado_mental_sessao.insight || ''} onChange={e => upd('estado_mental_sessao', 'insight', e.target.value || null)} className={inputCls}>
+                    <select value={r.estado_mental.insight || ''} onChange={e => upd('estado_mental', 'insight', e.target.value || null)} className={inputCls}>
                       <option value="">—</option>
                       <option value="presente">presente</option>
                       <option value="parcial">parcial</option>
@@ -297,7 +345,7 @@ export function ApprovalModal({
                   </div>
                   <div>
                     <label className={labelCls}>Risco Suicida</label>
-                    <select value={r.estado_mental_sessao.risco_suicida} onChange={e => upd('estado_mental_sessao', 'risco_suicida', e.target.value)} className={inputCls}>
+                    <select value={r.estado_mental.risco_suicida} onChange={e => upd('estado_mental', 'risco_suicida', e.target.value)} className={inputCls}>
                       <option value="ausente">ausente</option>
                       <option value="ideação passiva">ideação passiva</option>
                       <option value="ideação ativa">ideação ativa</option>
@@ -307,7 +355,7 @@ export function ApprovalModal({
                   </div>
                   <div>
                     <label className={labelCls}>Risco Heteroagressivo</label>
-                    <select value={r.estado_mental_sessao.risco_heteroagressivo} onChange={e => upd('estado_mental_sessao', 'risco_heteroagressivo', e.target.value)} className={inputCls}>
+                    <select value={r.estado_mental.risco_heteroagressivo} onChange={e => upd('estado_mental', 'risco_heteroagressivo', e.target.value)} className={inputCls}>
                       <option value="ausente">ausente</option>
                       <option value="presente">presente</option>
                       <option value="não avaliado">não avaliado</option>
@@ -316,71 +364,71 @@ export function ApprovalModal({
                 </div>
                 <div>
                   <label className={labelCls}>Conteúdo do Pensamento</label>
-                  <textarea value={r.estado_mental_sessao.pensamento_conteudo?.resumo || ''} onChange={e => setEditedResumo(prev => ({ ...prev, estado_mental_sessao: { ...prev.estado_mental_sessao, pensamento_conteudo: { ...prev.estado_mental_sessao.pensamento_conteudo, resumo: e.target.value || null } } }))} rows={2} className={textareaCls} />
+                  <textarea value={r.estado_mental.pensamento_conteudo || ''} onChange={e => upd('estado_mental', 'pensamento_conteudo', e.target.value || null)} rows={2} className={textareaCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Outras Observações</label>
+                  <textarea value={r.estado_mental.outras_observacoes || ''} onChange={e => upd('estado_mental', 'outras_observacoes', e.target.value || null)} rows={2} className={textareaCls} placeholder="Aparência, orientação, atenção..." />
                 </div>
               </EditSection>
 
-              {/* Queixa e Sintomatologia */}
-              <EditSection title="Queixa e Sintomatologia">
+              {/* Queixas e Sintomas */}
+              <EditSection title="Queixas e Sintomas">
                 <div>
                   <label className={labelCls}>Queixa da Sessão</label>
-                  <textarea value={r.queixa_sintomatologia.queixa_sessao || ''} onChange={e => upd('queixa_sintomatologia', 'queixa_sessao', e.target.value || null)} rows={2} className={textareaCls} />
+                  <textarea value={r.queixas_sintomas.queixa_sessao || ''} onChange={e => upd('queixas_sintomas', 'queixa_sessao', e.target.value || null)} rows={2} className={textareaCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Sintomas Relatados (separados por vírgula)</label>
-                  <input value={r.queixa_sintomatologia.sintomas_relatados.join(', ')} onChange={e => upd('queixa_sintomatologia', 'sintomas_relatados', arrFromCommas(e.target.value))} className={inputCls} />
+                  <label className={labelCls}>Sintomas Relatados (um por linha)</label>
+                  <textarea value={r.queixas_sintomas.sintomas_relatados.join('\n')} onChange={e => upd('queixas_sintomas', 'sintomas_relatados', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>Intensidade (0-10)</label>
-                    <input type="number" min={0} max={10} value={r.queixa_sintomatologia.intensidade ?? ''} onChange={e => upd('queixa_sintomatologia', 'intensidade', e.target.value ? Number(e.target.value) : null)} className={inputCls} />
+                    <input type="number" min={0} max={10} value={r.queixas_sintomas.intensidade ?? ''} onChange={e => upd('queixas_sintomas', 'intensidade', e.target.value ? Number(e.target.value) : null)} className={inputCls} />
                   </div>
                   <div>
                     <label className={labelCls}>Frequência</label>
-                    <input value={r.queixa_sintomatologia.frequencia || ''} onChange={e => upd('queixa_sintomatologia', 'frequencia', e.target.value || null)} className={inputCls} />
+                    <input value={r.queixas_sintomas.frequencia || ''} onChange={e => upd('queixas_sintomas', 'frequencia', e.target.value || null)} className={inputCls} />
                   </div>
                 </div>
                 <div>
-                  <label className={labelCls}>Gatilhos (um por linha)</label>
-                  <textarea value={r.queixa_sintomatologia.gatilhos.join('\n')} onChange={e => upd('queixa_sintomatologia', 'gatilhos', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                  <label className={labelCls}>Fatores Agravantes (um por linha)</label>
+                  <textarea value={r.queixas_sintomas.fatores_agravantes.join('\n')} onChange={e => upd('queixas_sintomas', 'fatores_agravantes', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Estratégias que Ajudaram (um por linha)</label>
-                  <textarea value={r.queixa_sintomatologia.estrategias_que_ajudaram.join('\n')} onChange={e => upd('queixa_sintomatologia', 'estrategias_que_ajudaram', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                  <label className={labelCls}>Fatores de Alívio (um por linha)</label>
+                  <textarea value={r.queixas_sintomas.fatores_alivio.join('\n')} onChange={e => upd('queixas_sintomas', 'fatores_alivio', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
                 </div>
               </EditSection>
 
               {/* Intervenções */}
               <EditSection title="Intervenções">
                 <div>
-                  <label className={labelCls}>Objetivo da Sessão</label>
-                  <input value={r.intervencoes.objetivos_sessao || ''} onChange={e => upd('intervencoes', 'objetivos_sessao', e.target.value || null)} className={inputCls} />
-                </div>
-                <div>
                   <label className={labelCls}>Temas Trabalhados (separados por vírgula)</label>
-                  <input value={r.intervencoes.temas_trabalhados.join(', ')} onChange={e => upd('intervencoes', 'temas_trabalhados', arrFromCommas(e.target.value))} className={inputCls} />
+                  <input value={r.intervencoes.temas_trabalhados.map((t: any) => typeof t === 'string' ? t : t.tema).join(', ')} onChange={e => upd('intervencoes', 'temas_trabalhados', arrFromCommas(e.target.value))} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Técnicas Utilizadas (uma por linha)</label>
                   <textarea value={r.intervencoes.tecnicas_utilizadas.join('\n')} onChange={e => upd('intervencoes', 'tecnicas_utilizadas', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Resposta do Paciente</label>
-                  <textarea value={r.intervencoes.resposta_do_paciente || ''} onChange={e => upd('intervencoes', 'resposta_do_paciente', e.target.value || null)} rows={2} className={textareaCls} />
+                  <label className={labelCls}>Observações do Processo</label>
+                  <textarea value={r.intervencoes.observacoes_processo || ''} onChange={e => upd('intervencoes', 'observacoes_processo', e.target.value || null)} rows={2} className={textareaCls} />
                 </div>
               </EditSection>
 
-              {/* Pessoas */}
-              <EditSection title="Pessoas Mencionadas">
-                {r.pessoas_mencionadas.map((p, i) => (
+              {/* Pessoas Centrais */}
+              <EditSection title="Pessoas Centrais">
+                {r.pessoas_centrais.map((p, i) => (
                   <div key={i} className="p-3 bg-gray-50 rounded-lg space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-gray-400">Pessoa {i + 1}</span>
-                      <button type="button" onClick={() => rmPessoa(i)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                      <span className="text-xs font-medium text-gray-400">Central {i + 1}</span>
+                      <button type="button" onClick={() => rmPessoaCentral(i)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-3">
-                      <input value={p.nome_usado} onChange={e => updPessoa(i, 'nome_usado', e.target.value)} className={inputCls} placeholder="Nome usado" />
-                      <select value={p.categoria} onChange={e => updPessoa(i, 'categoria', e.target.value)} className={inputCls}>
+                      <input value={p.nome_usado} onChange={e => updPessoaCentral(i, 'nome_usado', e.target.value)} className={inputCls} placeholder="Nome usado" />
+                      <select value={p.categoria} onChange={e => updPessoaCentral(i, 'categoria', e.target.value)} className={inputCls}>
                         <option value="familia_origem">Família Origem</option>
                         <option value="familia_constituida">Família Constituída</option>
                         <option value="trabalho">Trabalho</option>
@@ -388,26 +436,37 @@ export function ApprovalModal({
                         <option value="profissional_saude">Profissional Saúde</option>
                         <option value="outros">Outros</option>
                       </select>
-                      <input value={p.tipo} onChange={e => updPessoa(i, 'tipo', e.target.value)} className={inputCls} placeholder="Tipo (mae, chefe...)" />
+                      <input value={p.tipo} onChange={e => updPessoaCentral(i, 'tipo', e.target.value)} className={inputCls} placeholder="Tipo (mae, irmao...)" />
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <input value={p.contexto || ''} onChange={e => updPessoa(i, 'contexto', e.target.value)} className={inputCls} placeholder="Contexto (ex: irmão do parceiro)" />
-                      <select value={p.relevancia} onChange={e => updPessoa(i, 'relevancia', e.target.value)} className={inputCls}>
-                        <option value="central">Central</option>
-                        <option value="secundaria">Secundária</option>
-                      </select>
-                    </div>
-                    <input value={p.nota} onChange={e => updPessoa(i, 'nota', e.target.value)} className={inputCls} placeholder="O que foi mencionado..." />
+                    <textarea value={p.mencao} onChange={e => updPessoaCentral(i, 'mencao', e.target.value)} className={textareaCls} rows={2} placeholder="Intervenção terapêutica realizada sobre essa dinâmica..." />
                   </div>
                 ))}
-                <button type="button" onClick={addPessoa} className="text-sm text-primary hover:text-primary/80 font-medium">+ Adicionar pessoa</button>
+                <button type="button" onClick={addPessoaCentral} className="text-sm text-primary hover:text-primary/80 font-medium">+ Adicionar pessoa central</button>
               </EditSection>
 
-              {/* Plano e Metas */}
-              <EditSection title="Plano e Metas">
+              {/* Pessoas Secundárias */}
+              <EditSection title="Pessoas Secundárias">
+                {r.pessoas_secundarias.map((p, i) => (
+                  <div key={i} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-400">Secundária {i + 1}</span>
+                      <button type="button" onClick={() => rmPessoaSecundaria(i)} className="text-xs text-red-500 hover:text-red-700">Remover</button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input value={p.nome_usado} onChange={e => updPessoaSecundaria(i, 'nome_usado', e.target.value)} className={inputCls} placeholder="Nome usado" />
+                      <input value={p.tipo} onChange={e => updPessoaSecundaria(i, 'tipo', e.target.value)} className={inputCls} placeholder="Tipo (genitor, namorado...)" />
+                    </div>
+                    <input value={p.mencao} onChange={e => updPessoaSecundaria(i, 'mencao', e.target.value)} className={inputCls} placeholder="Resumo breve..." />
+                  </div>
+                ))}
+                <button type="button" onClick={addPessoaSecundaria} className="text-sm text-primary hover:text-primary/80 font-medium">+ Adicionar pessoa secundária</button>
+              </EditSection>
+
+              {/* Estratégia e Plano */}
+              <EditSection title="Estratégia e Plano">
                 <div>
                   <label className={labelCls}>Progresso de Tarefas Anteriores</label>
-                  {r.plano_metas.progresso_relatado.map((p, i) => (
+                  {r.progresso_tarefas.map((p, i) => (
                     <div key={i} className="p-3 bg-gray-50 rounded-lg space-y-2 mb-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-gray-400">Tarefa {i + 1}</span>
@@ -429,93 +488,179 @@ export function ApprovalModal({
                 </div>
                 <div>
                   <label className={labelCls}>Tarefas Novas (uma por linha)</label>
-                  <textarea value={r.plano_metas.tarefas_novas.join('\n')} onChange={e => upd('plano_metas', 'tarefas_novas', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
+                  <textarea value={r.estrategia_plano.tarefas_novas.join('\n')} onChange={e => upd('estrategia_plano', 'tarefas_novas', arrFromLines(e.target.value))} rows={3} className={textareaCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Metas Acordadas</label>
-                  <textarea value={r.plano_metas.metas_acordadas || ''} onChange={e => upd('plano_metas', 'metas_acordadas', e.target.value || null)} rows={2} className={textareaCls} />
+                  <textarea value={r.estrategia_plano.metas_acordadas || ''} onChange={e => upd('estrategia_plano', 'metas_acordadas', e.target.value || null)} rows={2} className={textareaCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Foco Próxima Sessão</label>
-                  <input value={r.plano_metas.foco_proxima_sessao || ''} onChange={e => upd('plano_metas', 'foco_proxima_sessao', e.target.value || null)} className={inputCls} />
+                  <input value={r.estrategia_plano.foco_proxima_sessao || ''} onChange={e => upd('estrategia_plano', 'foco_proxima_sessao', e.target.value || null)} className={inputCls} />
                 </div>
               </EditSection>
 
-              {/* Medicação */}
-              <EditSection title="Medicação">
+              {/* Mudanças e Padrões */}
+              <EditSection title="Mudanças e Padrões">
                 <div>
-                  <label className={labelCls}>Medicações</label>
-                  <input value={r.medicacao_sessao.medicacoes_mencionadas || ''} onChange={e => upd('medicacao_sessao', 'medicacoes_mencionadas', e.target.value || null)} className={inputCls} />
+                  <label className={labelCls}>Mudanças Positivas (uma por linha)</label>
+                  <textarea value={r.mudancas_padroes.mudancas_positivas.join('\n')} onChange={e => upd('mudancas_padroes', 'mudancas_positivas', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className={labelCls}>Adesão</label>
-                    <input value={r.medicacao_sessao.adesao || ''} onChange={e => upd('medicacao_sessao', 'adesao', e.target.value || null)} className={inputCls} placeholder="boa, irregular..." />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Mudanças</label>
-                    <input value={r.medicacao_sessao.mudancas || ''} onChange={e => upd('medicacao_sessao', 'mudancas', e.target.value || null)} className={inputCls} />
-                  </div>
+                <div>
+                  <label className={labelCls}>Padrões Identificados (um por linha)</label>
+                  <textarea value={r.mudancas_padroes.padroes_identificados.join('\n')} onChange={e => upd('mudancas_padroes', 'padroes_identificados', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Crenças Centrais (uma por linha)</label>
+                  <textarea value={r.mudancas_padroes.crencas_centrais.join('\n')} onChange={e => upd('mudancas_padroes', 'crencas_centrais', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Recursos do Paciente (um por linha)</label>
+                  <textarea value={r.mudancas_padroes.recursos_paciente.join('\n')} onChange={e => upd('mudancas_padroes', 'recursos_paciente', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Persistências (uma por linha)</label>
+                  <textarea value={r.mudancas_padroes.persistencias.join('\n')} onChange={e => upd('mudancas_padroes', 'persistencias', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                </div>
+              </EditSection>
+
+              {/* Farmacologia */}
+              <EditSection title="Farmacologia">
+                <div>
+                  <label className={labelCls}>Adesão</label>
+                  <select value={r.farmacologia.adesao || ''} onChange={e => upd('farmacologia', 'adesao', e.target.value || null)} className={inputCls}>
+                    <option value="">—</option>
+                    <option value="boa">boa</option>
+                    <option value="irregular">irregular</option>
+                    <option value="abandonou">abandonou</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelCls}>Efeitos Relatados</label>
-                  <input value={r.medicacao_sessao.efeitos_relatados || ''} onChange={e => upd('medicacao_sessao', 'efeitos_relatados', e.target.value || null)} className={inputCls} />
+                  <input value={r.farmacologia.efeitos_relatados || ''} onChange={e => upd('farmacologia', 'efeitos_relatados', e.target.value || null)} className={inputCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Encaminhamentos</label>
-                  <input value={r.medicacao_sessao.encaminhamentos || ''} onChange={e => upd('medicacao_sessao', 'encaminhamentos', e.target.value || null)} className={inputCls} />
+                  <label className={labelCls}>Mudanças</label>
+                  <input value={r.farmacologia.mudancas || ''} onChange={e => upd('farmacologia', 'mudancas', e.target.value || null)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Encaminhamento Psiquiátrico</label>
+                  <input value={r.farmacologia.encaminhamento_psiquiatrico || ''} onChange={e => upd('farmacologia', 'encaminhamento_psiquiatrico', e.target.value || null)} className={inputCls} />
                 </div>
               </EditSection>
 
-              {/* Fatos Biográficos */}
-              <EditSection title="Fatos Biográficos (desta sessão)">
-                <div>
-                  <label className={labelCls}>Informações biográficas reveladas (uma por linha)</label>
-                  <textarea value={r.fatos_novos_biograficos.join('\n')} onChange={e => setEditedResumo(prev => ({ ...prev, fatos_novos_biograficos: arrFromLines(e.target.value) }))} rows={3} className={textareaCls} placeholder="Dados de infância, família, marcos de vida..." />
-                </div>
-              </EditSection>
-
-              {/* Evolução CRP */}
+              {/* Evolução CFP */}
               <EditSection title="Evolução (Prontuário CFP)" defaultOpen>
                 <div>
                   <label className={labelCls}>Texto de Evolução</label>
-                  <textarea value={r.evolucao_crp} onChange={e => setEditedResumo(prev => ({ ...prev, evolucao_crp: e.target.value }))} rows={6} className={textareaCls} placeholder="Paciente compareceu à sessão de psicoterapia..." />
+                  <textarea value={r.evolucao_cfp} onChange={e => setEditedResumo(prev => ({ ...prev, evolucao_cfp: e.target.value }))} rows={6} className={textareaCls} placeholder="Paciente compareceu à sessão de psicoterapia..." />
                 </div>
               </EditSection>
 
-              {/* Alertas */}
-              <EditSection title="Alertas" defaultOpen>
+              {/* Pontos de Atenção */}
+              <EditSection title="Pontos de Atenção" defaultOpen>
                 <div>
                   <label className={labelCls}>Urgentes (um por linha)</label>
-                  <textarea value={r.alertas.urgentes.join('\n')} onChange={e => upd('alertas', 'urgentes', arrFromLines(e.target.value))} rows={2} className={`${textareaCls} border-red-200 focus:border-red-400`} placeholder="Risco iminente..." />
+                  <textarea value={r.pontos_atencao.urgentes.join('\n')} onChange={e => upd('pontos_atencao', 'urgentes', arrFromLines(e.target.value))} rows={2} className={`${textareaCls} border-red-200 focus:border-red-400`} placeholder="Risco iminente..." />
                 </div>
                 <div>
-                  <label className={labelCls}>Atenção (um por linha)</label>
-                  <textarea value={r.alertas.atencao.join('\n')} onChange={e => upd('alertas', 'atencao', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                  <label className={labelCls}>Monitorar (um por linha)</label>
+                  <textarea value={r.pontos_atencao.monitorar.join('\n')} onChange={e => upd('pontos_atencao', 'monitorar', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
                 </div>
                 <div>
-                  <label className={labelCls}>Acompanhar (um por linha)</label>
-                  <textarea value={r.alertas.acompanhar.join('\n')} onChange={e => upd('alertas', 'acompanhar', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
+                  <label className={labelCls}>Acompanhar Próximas (um por linha)</label>
+                  <textarea value={r.pontos_atencao.acompanhar_proximas.join('\n')} onChange={e => upd('pontos_atencao', 'acompanhar_proximas', arrFromLines(e.target.value))} rows={2} className={textareaCls} />
                 </div>
               </EditSection>
             </div>
           )}
         </div>
 
+        {/* AI Adjust Panel */}
+        {mode === 'review' && showAiAdjust && (
+          <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/80 flex-shrink-0">
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  O que a IA deve ajustar?
+                </label>
+                <textarea
+                  value={aiInstrucoes}
+                  onChange={(e) => setAiInstrucoes(e.target.value)}
+                  placeholder={'Ex: "O humor deveria ser ansioso, não eutímico" ou "Faltou mencionar a tarefa de exposição gradual"'}
+                  rows={2}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-400 resize-none"
+                  disabled={isAdjusting}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault()
+                      handleAiAdjust()
+                    }
+                  }}
+                />
+                {adjustError && (
+                  <p className="text-xs text-red-600 mt-1">{adjustError}</p>
+                )}
+                <p className="text-[10px] text-gray-400 mt-1">Ctrl+Enter para enviar</p>
+              </div>
+              <div className="flex flex-col gap-1.5 pt-5">
+                <button
+                  onClick={handleAiAdjust}
+                  disabled={isAdjusting || !aiInstrucoes.trim()}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                >
+                  {isAdjusting ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Ajustando...
+                    </span>
+                  ) : 'Enviar'}
+                </button>
+                <button
+                  onClick={() => { setShowAiAdjust(false); setAiInstrucoes(''); setAdjustError(null) }}
+                  className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                  disabled={isAdjusting}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
+        {approveError && mode === 'review' && (
+          <div className="px-6 py-2 border-t border-red-100 bg-red-50 flex-shrink-0">
+            <p className="text-sm text-red-700">{approveError}</p>
+          </div>
+        )}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
           {mode === 'review' ? (
             <>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Fechar
-              </button>
+              <button onClick={onClose} disabled={isAdjusting} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50">Fechar</button>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setMode('edit')}
-                  className="px-4 py-2 text-sm font-medium text-amber-700 bg-white border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors"
+                  onClick={() => setShowAiAdjust(!showAiAdjust)}
+                  disabled={isAdjusting}
+                  className="px-4 py-2 text-sm font-medium text-violet-700 bg-white border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors disabled:opacity-50"
+                >
+                  <span className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM19.5 10.5h-3m1.5-1.5v3" />
+                    </svg>
+                    Ajustar por IA
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEditedResumo(displayedResumo ? cloneResumo(displayedResumo) : emptyResumo())
+                    setMode('edit')
+                  }}
+                  disabled={isAdjusting}
+                  className="px-4 py-2 text-sm font-medium text-amber-700 bg-white border border-amber-300 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
                 >
                   <span className="flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -526,7 +671,7 @@ export function ApprovalModal({
                 </button>
                 <button
                   onClick={handleApprove}
-                  disabled={isApproving}
+                  disabled={isApproving || isAdjusting}
                   className="px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                 >
                   <span className="flex items-center gap-2">
@@ -549,7 +694,7 @@ export function ApprovalModal({
             <>
               <button
                 onClick={() => {
-                  setEditedResumo(resumo ? cloneResumo(resumo) : emptyResumo())
+                  setEditedResumo(displayedResumo ? cloneResumo(displayedResumo) : emptyResumo())
                   setMode('review')
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
@@ -566,6 +711,34 @@ export function ApprovalModal({
             </>
           )}
         </div>
+        {/* AI Adjust Result Overlay */}
+        {adjustResult && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10 rounded-2xl">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-xl w-full max-w-md mx-6 overflow-hidden">
+              <div className="px-5 pt-5 pb-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM19.5 10.5h-3m1.5-1.5v3" />
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-semibold text-gray-900">Resultado do ajuste</h3>
+                </div>
+                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-line bg-gray-50 rounded-lg px-4 py-3 border border-gray-100 max-h-60 overflow-y-auto">
+                  {adjustResult}
+                </div>
+              </div>
+              <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-end">
+                <button
+                  onClick={() => setAdjustResult(null)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-violet-600 rounded-lg hover:bg-violet-700 transition-colors"
+                >
+                  Ver prontuário atualizado
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

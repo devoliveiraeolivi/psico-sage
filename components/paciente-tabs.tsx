@@ -257,7 +257,7 @@ function HistoricoTab({ historico }: { historico: PacienteHistorico }) {
 }
 
 function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
-  const sessoesComResumo = sessoes.filter(s => s.resumo?.resumo_sessao?.sintese)
+  const sessoesComResumo = sessoes.filter(s => s.resumo?.resumo?.sintese)
 
   if (sessoesComResumo.length === 0) {
     return (
@@ -294,17 +294,17 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
                   {formatDate(sessao.data_hora)}
                 </span>
               </div>
-              {r?.estado_mental_sessao?.humor && (
+              {r?.estado_mental?.humor && (
                 <span className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded">
-                  {r.estado_mental_sessao.humor}
+                  {r.estado_mental.humor}
                 </span>
               )}
             </div>
 
             {/* Síntese */}
-            {r?.resumo_sessao?.sintese && (
+            {r?.resumo?.sintese && (
               <p className="text-sm text-gray-700 leading-relaxed mb-3">
-                {r.resumo_sessao.sintese}
+                {r.resumo.sintese}
               </p>
             )}
 
@@ -313,7 +313,7 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {r.intervencoes.temas_trabalhados.map((tema, i) => (
                   <span key={i} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
-                    {tema}
+                    {typeof tema === 'string' ? tema : tema.tema}
                   </span>
                 ))}
               </div>
@@ -321,22 +321,22 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
 
             {/* Pontos Principais e Mudanças */}
             <div className="grid gap-3 sm:grid-cols-2 mt-3">
-              {r?.resumo_sessao?.pontos_principais && r.resumo_sessao.pontos_principais.length > 0 && (
+              {r?.resumo?.pontos_principais && r.resumo.pontos_principais.length > 0 && (
                 <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
                   <div className="text-xs font-medium text-blue-600 mb-1.5">Pontos Principais</div>
                   <ul className="space-y-1">
-                    {r.resumo_sessao.pontos_principais.map((p, i) => (
+                    {r.resumo.pontos_principais.map((p, i) => (
                       <li key={i} className="text-xs text-gray-700">• {p}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {r?.resumo_sessao?.mudancas_observadas && r.resumo_sessao.mudancas_observadas.length > 0 && (
+              {r?.mudancas_padroes?.mudancas_positivas && r.mudancas_padroes.mudancas_positivas.length > 0 && (
                 <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                  <div className="text-xs font-medium text-emerald-600 mb-1.5">Mudanças Observadas</div>
+                  <div className="text-xs font-medium text-emerald-600 mb-1.5">Avanços</div>
                   <ul className="space-y-1">
-                    {r.resumo_sessao.mudancas_observadas.map((m, i) => (
+                    {r.mudancas_padroes.mudancas_positivas.map((m, i) => (
                       <li key={i} className="text-xs text-gray-700">• {m}</li>
                     ))}
                   </ul>
@@ -345,22 +345,22 @@ function ResumosTab({ sessoes }: { sessoes: Sessao[] }) {
             </div>
 
             {/* Tarefas novas */}
-            {r?.plano_metas?.tarefas_novas && r.plano_metas.tarefas_novas.length > 0 && (
+            {r?.estrategia_plano?.tarefas_novas && r.estrategia_plano.tarefas_novas.length > 0 && (
               <div className="mt-3 p-3 rounded-lg bg-sky-50/50 border border-sky-100">
                 <div className="text-xs font-medium text-sky-600 mb-1.5">Tarefas Atribuídas</div>
                 <ul className="space-y-1">
-                  {r.plano_metas.tarefas_novas.map((tarefa, i) => (
+                  {r.estrategia_plano.tarefas_novas.map((tarefa, i) => (
                     <li key={i} className="text-xs text-gray-700">• {tarefa}</li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {/* Evolução CRP (preview) */}
-            {r?.evolucao_crp && (
+            {/* Evolução CFP (preview) */}
+            {r?.evolucao_cfp && (
               <div className="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                 <div className="text-xs font-medium text-slate-500 mb-1">Evolução CFP</div>
-                <p className="text-xs text-slate-600 line-clamp-3">{r.evolucao_crp}</p>
+                <p className="text-xs text-slate-600 line-clamp-3">{r.evolucao_cfp}</p>
               </div>
             )}
           </div>

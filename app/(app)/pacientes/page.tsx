@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { PacientesList } from '@/components/pacientes-list'
 import { createClient } from '@/lib/supabase/server'
+import { logger } from '@/lib/utils/logger'
 import type { Paciente } from '@/lib/types'
 
 export default async function PacientesPage() {
@@ -12,7 +13,7 @@ export default async function PacientesPage() {
     .order('nome', { ascending: true }) as { data: Paciente[] | null; error: any }
 
   if (error) {
-    console.error('Erro ao buscar pacientes:', error)
+    logger.error('Erro ao buscar pacientes', { error: error.message })
   }
 
   const pacientes = data || []

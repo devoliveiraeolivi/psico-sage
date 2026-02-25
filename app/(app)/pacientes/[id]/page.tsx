@@ -2,10 +2,12 @@ import { formatDate, statusPacienteLabels, calcularIdade } from '@/lib/utils'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PacienteTabs } from '@/components/paciente-tabs'
-import { PatientMeetLink } from '@/components/patient-meet-link'
+import { PatientVideoLink } from '@/components/patient-video-link'
 import { PatientRecurrenceConfig } from '@/components/patient-recurrence-config'
 import { createClient } from '@/lib/supabase/server'
 import type { Paciente, Sessao } from '@/lib/types'
+import { decryptPaciente, decryptJsonField } from '@/lib/supabase/encrypt'
+import { PageTourWrapper } from '@/components/page-tour-wrapper'
 
 const statusColors: Record<string, string> = {
   ativo: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -30,18 +32,32 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
     .order('data_hora', { ascending: false })
     .limit(20) as { data: Sessao[] | null }
 
-  const sessoes = sessoesData || []
+  // Decrypt sensitive fields
+  if (paciente) decryptPaciente(paciente as any)
+  const sessoes = (sessoesData || []).map(s => {
+    if (s.resumo) (s as any).resumo = decryptJsonField(s.resumo)
+    return s
+  })
 
   if (!paciente) {
     notFound()
   }
+
+  // Fetch video settings do terapeuta
+  const { data: { user } } = await (supabase as any).auth.getUser()
+  const { data: usuario } = user ? await (supabase as any)
+    .from('usuarios')
+    .select('video_plataforma, video_plataforma_nome, video_modo_link, video_link_fixo')
+    .eq('id', user.id)
+    .single() : { data: null }
 
   const resumo = paciente.resumo || {}
   const historico = paciente.historico || {}
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <PageTourWrapper pageId="paciente-detail" />
+      <div id="patient-header" className="flex items-start justify-between">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center">
             <span className="text-lg font-semibold text-violet-700">
@@ -83,7 +99,7 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
       </div>
 
       {resumo.sintese && (
-        <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-xl border border-gray-200 p-5">
+        <div id="clinical-synthesis" className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-xl border border-gray-200 p-5">
           <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
@@ -95,11 +111,11 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div id="patient-tabs" className="lg:col-span-2">
           <PacienteTabs resumo={resumo} historico={historico} sessoes={sessoes} />
         </div>
 
-        <div className="space-y-5">
+        <div id="patient-sidebar" className="space-y-5">
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Contato</h2>
             <div className="space-y-3">
@@ -130,7 +146,14 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
             initialDuracao={(paciente as any).duracao_padrao || 50}
           />
 
-          <PatientMeetLink pacienteId={paciente.id} initialMeetLink={(paciente as any).meet_link || null} />
+          <PatientVideoLink
+            pacienteId={paciente.id}
+            initialVideoLink={(paciente as any).video_link || null}
+            videoPlataforma={usuario?.video_plataforma || 'nenhum'}
+            videoPlataformaNome={usuario?.video_plataforma_nome || null}
+            videoModoLink={usuario?.video_modo_link || 'por_paciente'}
+            videoLinkFixo={usuario?.video_link_fixo || null}
+          />
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
@@ -145,8 +168,8 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
                       <span className="text-sm font-medium text-gray-900">Sessão {sessao.numero_sessao}</span>
                       <span className="text-xs text-gray-400">{formatDate(sessao.data_hora)}</span>
                     </div>
-                    {sessao.resumo?.resumo_sessao?.sintese && (
-                      <p className="text-xs text-gray-500 line-clamp-2">{sessao.resumo.resumo_sessao.sintese}</p>
+                    {sessao.resumo?.resumo?.sintese && (
+                      <p className="text-xs text-gray-500 line-clamp-2">{sessao.resumo.resumo.sintese}</p>
                     )}
                   </Link>
                 ))}
@@ -163,7 +186,7 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
             </div>
           )}
 
-          <Link href={`/agenda/nova?paciente=${id}`} className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
+          <Link id="schedule-session-btn" href={`/agenda/nova?paciente=${id}`} className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
             Agendar Sessão
           </Link>

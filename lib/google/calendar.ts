@@ -5,6 +5,26 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ]
 
+/** Thrown when a Google refresh token is expired, revoked, or invalid */
+export class GoogleAuthExpiredError extends Error {
+  constructor(message = 'Google refresh token expirado ou revogado') {
+    super(message)
+    this.name = 'GoogleAuthExpiredError'
+  }
+}
+
+function isGoogleAuthError(err: any): boolean {
+  const status = err?.code || err?.response?.status
+  const msg = String(err?.response?.data?.error || err?.message || '')
+  return (
+    status === 401 ||
+    status === 403 ||
+    msg.includes('invalid_grant') ||
+    msg.includes('Token has been expired or revoked') ||
+    msg.includes('UNAUTHENTICATED')
+  )
+}
+
 export function getOAuth2Client() {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -47,28 +67,34 @@ export async function createMeetLink(
   const calendar = google.calendar({ version: 'v3', auth: client })
   const requestId = `psicosage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-  const response = await calendar.events.insert({
-    calendarId: 'primary',
-    conferenceDataVersion: 1,
-    requestBody: {
-      summary: options.title,
-      description: options.description || '',
-      start: {
-        dateTime: options.startTime.toISOString(),
-        timeZone: 'America/Sao_Paulo',
-      },
-      end: {
-        dateTime: options.endTime.toISOString(),
-        timeZone: 'America/Sao_Paulo',
-      },
-      conferenceData: {
-        createRequest: {
-          requestId,
-          conferenceSolutionKey: { type: 'hangoutsMeet' },
+  let response
+  try {
+    response = await calendar.events.insert({
+      calendarId: 'primary',
+      conferenceDataVersion: 1,
+      requestBody: {
+        summary: options.title,
+        description: options.description || '',
+        start: {
+          dateTime: options.startTime.toISOString(),
+          timeZone: 'America/Sao_Paulo',
+        },
+        end: {
+          dateTime: options.endTime.toISOString(),
+          timeZone: 'America/Sao_Paulo',
+        },
+        conferenceData: {
+          createRequest: {
+            requestId,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
         },
       },
-    },
-  })
+    })
+  } catch (err) {
+    if (isGoogleAuthError(err)) throw new GoogleAuthExpiredError()
+    throw err
+  }
 
   const meetLink = response.data.conferenceData?.entryPoints?.find(
     (ep) => ep.entryPointType === 'video'
@@ -98,36 +124,54 @@ export async function createPermanentMeetLink(
   startTime.setHours(8, 0, 0, 0)
   const endTime = new Date(startTime.getTime() + 60 * 60 * 1000)
 
-  const response = await calendar.events.insert({
-    calendarId: 'primary',
-    conferenceDataVersion: 1,
-    requestBody: {
-      summary: `Terapia — ${options.patientName}`,
-      description: options.description || 'Link fixo de sessões de terapia via PsicoSage',
-      start: {
-        dateTime: startTime.toISOString(),
-        timeZone: 'America/Sao_Paulo',
-      },
-      end: {
-        dateTime: endTime.toISOString(),
-        timeZone: 'America/Sao_Paulo',
-      },
-      conferenceData: {
-        createRequest: {
-          requestId,
-          conferenceSolutionKey: { type: 'hangoutsMeet' },
+  let response
+  try {
+    response = await calendar.events.insert({
+      calendarId: 'primary',
+      conferenceDataVersion: 1,
+      requestBody: {
+        summary: `Terapia — ${options.patientName}`,
+        description: options.description || 'Link fixo de sessões de terapia via PsicoApp',
+        start: {
+          dateTime: startTime.toISOString(),
+          timeZone: 'America/Sao_Paulo',
         },
+        end: {
+          dateTime: endTime.toISOString(),
+          timeZone: 'America/Sao_Paulo',
+        },
+        conferenceData: {
+          createRequest: {
+            requestId,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        },
+        transparency: 'transparent',
       },
-      transparency: 'transparent',
-    },
-  })
+    })
+  } catch (err) {
+    if (isGoogleAuthError(err)) throw new GoogleAuthExpiredError()
+    throw err
+  }
 
   const meetLink = response.data.conferenceData?.entryPoints?.find(
     (ep) => ep.entryPointType === 'video'
   )?.uri
 
+  const calendarEventId = response.data.id || null
+
+  // Delete the placeholder event to keep the therapist's calendar clean.
+  // The Meet link remains functional even after the event is removed.
+  if (calendarEventId) {
+    try {
+      await calendar.events.delete({ calendarId: 'primary', eventId: calendarEventId })
+    } catch {
+      // Best effort — if deletion fails, the event stays but is transparent
+    }
+  }
+
   return {
     meetLink: meetLink || null,
-    calendarEventId: response.data.id || null,
+    calendarEventId,
   }
 }

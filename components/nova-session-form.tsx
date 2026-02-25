@@ -53,6 +53,7 @@ export function NovaSessionForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<CalendarSession[]>(weekSessions)
+  const [showExtraForm, setShowExtraForm] = useState(false)
 
   const selectedPaciente = pacientes.find(p => p.id === pacienteId)
   const hasRecurrence = !!(
@@ -112,10 +113,9 @@ export function NovaSessionForm({
       }
 
       const sessao = await res.json()
-      router.push(`/sessoes/${sessao.id}`)
+      window.location.href = `/sessoes/${sessao.id}`
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao criar sessão')
-    } finally {
       setSubmitting(false)
     }
   }
@@ -133,7 +133,7 @@ export function NovaSessionForm({
             <select
               id="paciente"
               value={pacienteId}
-              onChange={(e) => setPacienteId(e.target.value)}
+              onChange={(e) => { setPacienteId(e.target.value); setShowExtraForm(false) }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-colors"
             >
               <option value="">Selecione...</option>
@@ -201,21 +201,44 @@ export function NovaSessionForm({
                 </div>
               </div>
 
-              <Link
-                href={`/pacientes/${selectedPaciente!.id}`}
-                className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Gerenciar agenda recorrente
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/pacientes/${selectedPaciente!.id}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Gerenciar agenda
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => setShowExtraForm(!showExtraForm)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    showExtraForm
+                      ? 'text-gray-600 bg-gray-100 hover:bg-gray-200'
+                      : 'text-primary bg-primary/10 hover:bg-primary/20'
+                  }`}
+                >
+                  {showExtraForm ? (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                  )}
+                  {showExtraForm ? 'Cancelar' : 'Sessão extra'}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Formulário de criação manual — só aparece se paciente não tem recorrência */}
-          {!hasRecurrence && (
+          {/* Formulário de criação manual — aparece se não tem recorrência OU se pediu sessão extra */}
+          {(!hasRecurrence || showExtraForm) && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label htmlFor="dataHora" className="block text-xs font-medium text-gray-700 mb-1">
@@ -271,7 +294,7 @@ export function NovaSessionForm({
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
-                    Agendar Sessão
+                    {showExtraForm ? 'Agendar Sessão Extra' : 'Agendar Sessão'}
                   </>
                 )}
               </button>
@@ -292,7 +315,7 @@ export function NovaSessionForm({
         <UnifiedCalendar
           sessions={sessions}
           views={['semana']}
-          selectedDate={hasRecurrence ? undefined : dataHora}
+          selectedDate={hasRecurrence && !showExtraForm ? undefined : dataHora}
           onDateRangeChange={handleDateRangeChange}
         />
       </div>

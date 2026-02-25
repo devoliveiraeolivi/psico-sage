@@ -67,4 +67,6 @@ export const RATE_LIMITS = {
   extract: { windowMs: 60_000, maxRequests: 5 } as RateLimitConfig,
   uploadAudio: { windowMs: 60_000, maxRequests: 10 } as RateLimitConfig,
   batchPacientes: { windowMs: 60_000, maxRequests: 3 } as RateLimitConfig,
+  aiAdjust: { windowMs: 60_000, maxRequests: 5 } as RateLimitConfig,
+  reprocess: { windowMs: 60_000, maxRequests: 3 } as RateLimitConfig,
 } as const

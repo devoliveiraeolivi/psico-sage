@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       .select()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Erro ao criar pacientes' }, { status: 500 })
     }
 
     return NextResponse.json(
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    console.error('Erro ao criar pacientes em batch:', error)
+    // Batch creation failed
     return NextResponse.json(
       { error: 'Erro interno ao criar pacientes' },
       { status: 500 }

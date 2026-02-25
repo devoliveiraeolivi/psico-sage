@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import type { SessaoPreparacao, SessaoResumo, PacienteResumo } from '@/lib/types'
 import { formatDate } from '@/lib/utils'
+import { ProntuarioView } from './prontuario-view'
+import { useToast } from './toast'
 
 interface SessaoTabsProps {
   preparacao: SessaoPreparacao | null
@@ -12,6 +14,8 @@ interface SessaoTabsProps {
   jaRealizada: boolean
   sessaoId: string
   hasAudio: boolean
+  dataHora: string
+  recordingStatus?: string | null
 }
 
 // Note: pacienteResumo and pacienteHistorico are now passed to ContextoPacienteSidebar separately
@@ -25,6 +29,8 @@ export function SessaoTabs({
   jaRealizada,
   sessaoId,
   hasAudio,
+  dataHora,
+  recordingStatus,
 }: SessaoTabsProps) {
   const [activeTab, setActiveTab] = useState<TabId>(jaRealizada ? 'resumo' : 'preparacao')
 
@@ -99,7 +105,7 @@ export function SessaoTabs({
           <PreparacaoTab preparacao={preparacao} />
         )}
         {activeTab === 'resumo' && (
-          <ResumoTab resumo={resumo} jaRealizada={jaRealizada} sessaoId={sessaoId} hasAudio={hasAudio} />
+          <ResumoTab resumo={resumo} jaRealizada={jaRealizada} sessaoId={sessaoId} hasAudio={hasAudio} dataHora={dataHora} recordingStatus={recordingStatus} />
         )}
         {activeTab === 'transcricao' && (
           <TranscricaoTab integra={integra} />
@@ -380,10 +386,57 @@ export function InfoField({ label, value }: { label: string; value: string | nul
   )
 }
 
-export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio }: { resumo: SessaoResumo | null; jaRealizada: boolean; sessaoId?: string; hasAudio?: boolean }) {
+export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio, dataHora, recordingStatus }: { resumo: SessaoResumo | null; jaRealizada: boolean; sessaoId?: string; hasAudio?: boolean; dataHora?: string; recordingStatus?: string | null }) {
   const router = useRouter()
+  const { toast } = useToast()
   const [showConfirm, setShowConfirm] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  const prontuarioRef = useRef<HTMLDivElement>(null)
+
+  const isProcessing = recordingStatus && ['transcribing', 'processing', 'uploading'].includes(recordingStatus)
+
+  function handleExportPDF() {
+    const content = prontuarioRef.current
+    if (!content) return
+
+    const dataFormatadaExport = dataHora
+      ? new Date(dataHora).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+      : ''
+
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Resumo da Sessão — ${dataFormatadaExport}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    @page { margin: 18mm 14mm; size: A4; }
+    body { margin: 0; padding: 0; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div style="padding: 0 8px;">
+    <div style="font-family: 'DM Sans', sans-serif; font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;">Resumo da Sessão</div>
+    <div style="font-family: 'DM Sans', sans-serif; font-size: 13px; color: #64748b; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0;">${dataFormatadaExport}</div>
+    ${content.innerHTML}
+  </div>
+</body>
+</html>`)
+    printWindow.document.close()
+
+    // Wait for fonts to load before printing
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print()
+      }, 400)
+    }
+  }
 
   async function handleReprocess() {
     setReprocessing(true)
@@ -392,13 +445,14 @@ export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio }: { resumo:
       const res = await fetch(`/api/sessoes/${sessaoId}/extract`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.error || 'Erro ao reprocessar. Tente novamente.')
+        toast(data.error || 'Erro ao reprocessar. Tente novamente.')
+        setReprocessing(false)
       } else {
+        // Extração disparada em background — recarregar para mostrar progresso no SessionRecorder
         router.refresh()
       }
     } catch {
-      alert('Erro de conexão. Tente novamente.')
-    } finally {
+      toast('Erro de conexão. Tente novamente.')
       setReprocessing(false)
     }
   }
@@ -416,25 +470,37 @@ export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio }: { resumo:
     )
   }
 
-  const r = resumo
-  const hasAlertas = (r.alertas?.urgentes?.length || 0) + (r.alertas?.atencao?.length || 0) + (r.alertas?.acompanhar?.length || 0) > 0
-  const hasMedicacao = r.medicacao_sessao && Object.values(r.medicacao_sessao).some(v => v !== null)
-  const hasPessoas = r.pessoas_mencionadas && r.pessoas_mencionadas.length > 0
-  const hasQueixa = r.queixa_sintomatologia?.queixa_sessao || (r.queixa_sintomatologia?.sintomas_relatados?.length || 0) > 0
-  const hasFatos = r.fatos_novos_biograficos && r.fatos_novos_biograficos.length > 0
-  const pensamento = r.estado_mental_sessao?.pensamento_conteudo
+  const dataFormatada = dataHora
+    ? new Date(dataHora).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+    : ''
 
   return (
-    <div className="space-y-5">
-      {/* Reprocessar pela IA */}
-      {sessaoId && hasAudio && (
-        <div className="flex justify-end">
+    <div>
+      {/* Header: Sessão/data + Reprocessar na mesma linha */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Sessão</div>
+          <div className="text-sm text-gray-500">{dataFormatada}</div>
+        </div>
+        <div className="flex items-center gap-3">
+          {resumo && (
+            <button
+              onClick={handleExportPDF}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Exportar PDF
+            </button>
+          )}
+          {sessaoId && hasAudio && (
           <button
             onClick={() => setShowConfirm(true)}
-            disabled={reprocessing}
+            disabled={reprocessing || !!isProcessing}
             className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1.5 disabled:opacity-50"
           >
-            {reprocessing ? (
+            {reprocessing || isProcessing ? (
               <>
                 <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
@@ -451,8 +517,9 @@ export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio }: { resumo:
               </>
             )}
           </button>
+        )}
         </div>
-      )}
+      </div>
 
       {/* Modal de confirmação */}
       {showConfirm && (
@@ -490,273 +557,18 @@ export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio }: { resumo:
         </div>
       )}
 
-      {/* Alertas Urgentes (topo) */}
-      {r.alertas?.urgentes && r.alertas.urgentes.length > 0 && (
-        <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-          <SectionHeader title="Alertas Urgentes" color="red" />
-          <BulletList items={r.alertas.urgentes} className="text-red-800 font-medium" />
+      {reprocessing ? (
+        <div className="text-center py-12 text-gray-400">
+          <svg className="w-8 h-8 mx-auto mb-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-sm">Reprocessando prontuário pela IA...</p>
+          <p className="text-xs text-gray-300 mt-1">Isso pode levar alguns segundos</p>
         </div>
-      )}
-
-      {/* Resumo da Sessão */}
-      {r.resumo_sessao?.sintese && (
-        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
-          <SectionHeader title="Síntese" color="emerald" />
-          <p className="text-sm text-emerald-900 leading-relaxed">{r.resumo_sessao.sintese}</p>
-        </div>
-      )}
-
-      {r.resumo_sessao?.pontos_principais && r.resumo_sessao.pontos_principais.length > 0 && (
-        <div>
-          <SectionHeader title="Pontos Principais" />
-          <BulletList items={r.resumo_sessao.pontos_principais} />
-        </div>
-      )}
-
-      {/* Estado Mental */}
-      {r.estado_mental_sessao && (
-        <div>
-          <SectionHeader title="Estado Mental" />
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <InfoField label="Humor" value={r.estado_mental_sessao.humor} />
-            <InfoField label="Afeto" value={r.estado_mental_sessao.afeto} />
-            <InfoField label="Pensamento (curso)" value={r.estado_mental_sessao.pensamento_curso} />
-            <InfoField label="Insight" value={r.estado_mental_sessao.insight} />
-            <InfoField label="Juízo e Crítica" value={r.estado_mental_sessao.juizo_critica} />
-            <InfoField label="Sensopercepção" value={r.estado_mental_sessao.sensopercepcao} />
-          </div>
-          {pensamento?.resumo && (
-            <div className="mt-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
-              <div className="text-xs font-medium text-blue-600 mb-1">Conteúdo do Pensamento</div>
-              <p className="text-sm text-blue-900">{pensamento.resumo}</p>
-              {pensamento.evidencias && pensamento.evidencias.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {pensamento.evidencias.map((ev, i) => (
-                    <p key={i} className="text-xs text-blue-700 italic">&ldquo;{ev.trecho}&rdquo; <span className="text-blue-500">— {ev.quem}</span></p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <div className="grid gap-2 sm:grid-cols-2 mt-2">
-            <div className={`p-2.5 rounded-lg border ${r.estado_mental_sessao.risco_suicida === 'ausente' ? 'bg-green-50 border-green-100' : r.estado_mental_sessao.risco_suicida === 'não avaliado' ? 'bg-gray-50 border-gray-100' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-xs font-medium text-gray-500 mb-0.5">Risco Suicida</div>
-              <p className={`text-sm font-medium ${r.estado_mental_sessao.risco_suicida === 'ausente' ? 'text-green-700' : r.estado_mental_sessao.risco_suicida === 'não avaliado' ? 'text-gray-500' : 'text-red-700'}`}>
-                {r.estado_mental_sessao.risco_suicida}
-              </p>
-            </div>
-            <div className={`p-2.5 rounded-lg border ${r.estado_mental_sessao.risco_heteroagressivo === 'ausente' ? 'bg-green-50 border-green-100' : r.estado_mental_sessao.risco_heteroagressivo === 'não avaliado' ? 'bg-gray-50 border-gray-100' : 'bg-red-50 border-red-200'}`}>
-              <div className="text-xs font-medium text-gray-500 mb-0.5">Risco Heteroagressivo</div>
-              <p className={`text-sm font-medium ${r.estado_mental_sessao.risco_heteroagressivo === 'ausente' ? 'text-green-700' : r.estado_mental_sessao.risco_heteroagressivo === 'não avaliado' ? 'text-gray-500' : 'text-red-700'}`}>
-                {r.estado_mental_sessao.risco_heteroagressivo}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Queixa e Sintomatologia */}
-      {hasQueixa && (
-        <div>
-          <SectionHeader title="Queixa e Sintomatologia" />
-          {r.queixa_sintomatologia?.queixa_sessao && (
-            <p className="text-sm text-gray-700 mb-2">{r.queixa_sintomatologia.queixa_sessao}</p>
-          )}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {r.queixa_sintomatologia?.intensidade !== null && r.queixa_sintomatologia?.intensidade !== undefined && (
-              <InfoField label="Intensidade" value={`${r.queixa_sintomatologia.intensidade}/10`} />
-            )}
-            <InfoField label="Frequência" value={r.queixa_sintomatologia?.frequencia} />
-          </div>
-          {r.queixa_sintomatologia?.sintomas_relatados && r.queixa_sintomatologia.sintomas_relatados.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {r.queixa_sintomatologia.sintomas_relatados.map((s, i) => (
-                <span key={i} className="text-xs px-2 py-1 bg-orange-50 border border-orange-200 rounded text-orange-700">{s}</span>
-              ))}
-            </div>
-          )}
-          {r.queixa_sintomatologia?.gatilhos && r.queixa_sintomatologia.gatilhos.length > 0 && (
-            <div className="mt-2">
-              <div className="text-xs font-medium text-gray-400 mb-1">Gatilhos</div>
-              <BulletList items={r.queixa_sintomatologia.gatilhos} />
-            </div>
-          )}
-          {r.queixa_sintomatologia?.estrategias_que_ajudaram && r.queixa_sintomatologia.estrategias_que_ajudaram.length > 0 && (
-            <div className="mt-2">
-              <div className="text-xs font-medium text-gray-400 mb-1">Estratégias que Ajudaram</div>
-              <BulletList items={r.queixa_sintomatologia.estrategias_que_ajudaram} />
-            </div>
-          )}
-          {r.queixa_sintomatologia?.evidencias && r.queixa_sintomatologia.evidencias.length > 0 && (
-            <div className="mt-2 p-3 rounded-lg bg-gray-50 border border-gray-100">
-              <div className="text-xs font-medium text-gray-400 mb-1">Evidências</div>
-              {r.queixa_sintomatologia.evidencias.map((ev, i) => (
-                <p key={i} className="text-xs text-gray-600 italic">&ldquo;{ev.trecho}&rdquo; <span className="text-gray-400">— {ev.quem} ({ev.campo})</span></p>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Intervenções */}
-      {r.intervencoes && (r.intervencoes.tecnicas_utilizadas?.length || r.intervencoes.temas_trabalhados?.length) && (
-        <div>
-          <SectionHeader title="Intervenções" color="purple" />
-          {r.intervencoes.objetivos_sessao && (
-            <p className="text-sm text-gray-600 italic mb-2">Objetivo: {r.intervencoes.objetivos_sessao}</p>
-          )}
-          {r.intervencoes.temas_trabalhados && r.intervencoes.temas_trabalhados.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {r.intervencoes.temas_trabalhados.map((t, i) => (
-                <span key={i} className="text-xs px-2 py-1 bg-purple-50 border border-purple-200 rounded text-purple-700">{t}</span>
-              ))}
-            </div>
-          )}
-          {r.intervencoes.tecnicas_utilizadas && r.intervencoes.tecnicas_utilizadas.length > 0 && (
-            <BulletList items={r.intervencoes.tecnicas_utilizadas} />
-          )}
-          {r.intervencoes.resposta_do_paciente && (
-            <p className="text-sm text-gray-500 mt-2 italic">{r.intervencoes.resposta_do_paciente}</p>
-          )}
-        </div>
-      )}
-
-      {/* Pessoas Mencionadas */}
-      {hasPessoas && (
-        <div>
-          <SectionHeader title="Pessoas Mencionadas" />
-          <div className="space-y-2">
-            {r.pessoas_mencionadas!.map((p, i) => (
-              <div key={i} className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                <div className="flex-shrink-0 flex flex-col gap-1">
-                  <span className="text-xs px-2 py-0.5 bg-white border border-gray-200 rounded text-gray-500">{p.tipo}</span>
-                  {p.contexto && (
-                    <span className="text-xs px-2 py-0.5 bg-blue-50 border border-blue-100 rounded text-blue-500">{p.contexto}</span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-800">{p.nome_usado}</span>
-                    {p.relevancia === 'central' && (
-                      <span className="text-xs px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-amber-600">central</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-0.5">{p.nota}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Plano e Metas */}
-      {r.plano_metas && (
-        <div>
-          <SectionHeader title="Plano e Metas" color="sky" />
-          {r.plano_metas.progresso_relatado && r.plano_metas.progresso_relatado.length > 0 && (
-            <div className="mb-3">
-              <div className="text-xs font-medium text-gray-400 mb-1.5">Progresso de Tarefas Anteriores</div>
-              <div className="space-y-1.5">
-                {r.plano_metas.progresso_relatado.map((p, i) => {
-                  const statusColors: Record<string, string> = {
-                    concluida: 'bg-green-100 text-green-700',
-                    em_andamento: 'bg-blue-100 text-blue-700',
-                    parcial: 'bg-amber-100 text-amber-700',
-                    nao_realizada: 'bg-red-100 text-red-700',
-                  }
-                  const statusLabels: Record<string, string> = {
-                    concluida: 'Concluída',
-                    em_andamento: 'Em andamento',
-                    parcial: 'Parcial',
-                    nao_realizada: 'Não realizada',
-                  }
-                  return (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${statusColors[p.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {statusLabels[p.status] || p.status}
-                      </span>
-                      <div>
-                        <span className="text-gray-800">{p.meta}</span>
-                        {p.observacao && <p className="text-xs text-gray-500">{p.observacao}</p>}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-          {r.plano_metas.tarefas_novas && r.plano_metas.tarefas_novas.length > 0 && (
-            <div className="bg-sky-50 rounded-lg p-4 border border-sky-100">
-              <div className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">Tarefas para Próxima Sessão</div>
-              <BulletList items={r.plano_metas.tarefas_novas} className="text-sky-800" />
-            </div>
-          )}
-          {r.plano_metas.metas_acordadas && (
-            <div className="mt-2">
-              <InfoField label="Metas Acordadas" value={r.plano_metas.metas_acordadas} />
-            </div>
-          )}
-          {r.plano_metas.foco_proxima_sessao && (
-            <div className="mt-2">
-              <InfoField label="Foco Próxima Sessão" value={r.plano_metas.foco_proxima_sessao} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Medicação */}
-      {hasMedicacao && (
-        <div>
-          <SectionHeader title="Medicação" />
-          <div className="grid gap-2 sm:grid-cols-2">
-            <InfoField label="Medicações" value={r.medicacao_sessao?.medicacoes_mencionadas} />
-            <InfoField label="Adesão" value={r.medicacao_sessao?.adesao} />
-            <InfoField label="Efeitos Relatados" value={r.medicacao_sessao?.efeitos_relatados} />
-            <InfoField label="Mudanças" value={r.medicacao_sessao?.mudancas} />
-            <InfoField label="Encaminhamentos" value={r.medicacao_sessao?.encaminhamentos} />
-          </div>
-        </div>
-      )}
-
-      {/* Fatos Novos Biográficos */}
-      {hasFatos && (
-        <div>
-          <SectionHeader title="Fatos Biográficos (desta sessão)" />
-          <BulletList items={r.fatos_novos_biograficos} />
-        </div>
-      )}
-
-      {/* Mudanças Observadas */}
-      {r.resumo_sessao?.mudancas_observadas && r.resumo_sessao.mudancas_observadas.length > 0 && (
-        <div>
-          <SectionHeader title="Mudanças Observadas" color="emerald" />
-          <BulletList items={r.resumo_sessao.mudancas_observadas} className="text-emerald-800" />
-        </div>
-      )}
-
-      {/* Evolução CRP */}
-      {r.evolucao_crp && (
-        <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-          <SectionHeader title="Evolução (Prontuário CFP)" />
-          <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{r.evolucao_crp}</p>
-        </div>
-      )}
-
-      {/* Alertas (atenção + acompanhar) */}
-      {hasAlertas && (
-        <div className="space-y-3">
-          {r.alertas?.atencao && r.alertas.atencao.length > 0 && (
-            <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
-              <SectionHeader title="Atenção" color="amber" />
-              <BulletList items={r.alertas.atencao} className="text-amber-800" />
-            </div>
-          )}
-          {r.alertas?.acompanhar && r.alertas.acompanhar.length > 0 && (
-            <div className="bg-blue-50 rounded-lg border border-blue-100 p-4">
-              <SectionHeader title="Acompanhar" color="blue" />
-              <BulletList items={r.alertas.acompanhar} className="text-blue-800" />
-            </div>
-          )}
+      ) : (
+        <div ref={prontuarioRef}>
+          <ProntuarioView dados={resumo} />
         </div>
       )}
     </div>

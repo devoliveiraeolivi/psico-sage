@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
 import { inngest } from '@/lib/inngest/client'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
 import { logger } from '@/lib/utils/logger'
 
 /**
@@ -15,9 +16,21 @@ export async function POST(
   const { id } = await params
 
   try {
-    const db = await createClient() as any
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
 
-    // Verify session exists and has audio
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
+
+    const rl = checkRateLimit(`reprocess:${user!.id}`, RATE_LIMITS.reprocess)
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: 'Muitas requisições. Tente novamente em breve.' },
+        { status: 429 }
+      )
+    }
+
+    // Verify session has audio
     const { data: sessao, error } = await db
       .from('sessoes')
       .select('audio_url, recording_status')

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
+import { logger } from '@/lib/utils/logger'
+
+const MAX_PDF_SIZE_MB = 5
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** POST /api/sessoes/[id]/comprovante — Envia comprovante por email */
 export async function POST(
@@ -19,11 +23,11 @@ export async function POST(
     const { Resend } = await import('resend')
     const resend = new Resend(process.env.RESEND_API_KEY)
 
-    const db = await createClient() as any
-    const { data: { user } } = await db.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
-    }
+    const { user, db, error: authError } = await requireAuth()
+    if (authError) return authError
+
+    const ownership = await requireSessionOwner(db, user!.id, id)
+    if (ownership.error) return ownership.error
 
     const formData = await request.formData()
     const pdfFile = formData.get('pdf') as File | null
@@ -34,11 +38,30 @@ export async function POST(
       return NextResponse.json({ error: 'PDF e email são obrigatórios' }, { status: 400 })
     }
 
+    // Validate PDF MIME type
+    if (pdfFile.type && pdfFile.type !== 'application/pdf') {
+      return NextResponse.json({ error: 'Arquivo deve ser um PDF' }, { status: 400 })
+    }
+
+    // Validate PDF size
+    const pdfSizeMB = pdfFile.size / (1024 * 1024)
+    if (pdfSizeMB > MAX_PDF_SIZE_MB) {
+      return NextResponse.json(
+        { error: `PDF muito grande (${pdfSizeMB.toFixed(1)}MB). Limite: ${MAX_PDF_SIZE_MB}MB.` },
+        { status: 413 }
+      )
+    }
+
+    // Validate email format
+    if (!EMAIL_REGEX.test(destinatario)) {
+      return NextResponse.json({ error: 'Email inválido' }, { status: 400 })
+    }
+
     // Buscar nome do profissional para o remetente
     const { data: usuario } = await db
       .from('usuarios')
       .select('nome, crp')
-      .eq('id', user.id)
+      .eq('id', user!.id)
       .single()
 
     const nomeProf = usuario?.nome || 'Psicólogo(a)'
@@ -64,7 +87,7 @@ export async function POST(
           </p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
           <p style="color: #94a3b8; font-size: 11px;">
-            Enviado via PsicoSage
+            Enviado via PsicoApp
           </p>
         </div>
       `,
@@ -78,13 +101,13 @@ export async function POST(
     })
 
     if (error) {
-      console.error('Resend error:', error)
+      logger.error('Resend error', { sessaoId: id, error: error.message })
       return NextResponse.json({ error: 'Falha ao enviar email' }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('Erro ao enviar comprovante:', error)
+    logger.error('Erro ao enviar comprovante', { sessaoId: id, error: error instanceof Error ? error.message : 'unknown' })
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

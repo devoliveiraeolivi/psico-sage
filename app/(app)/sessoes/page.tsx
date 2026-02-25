@@ -3,6 +3,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { PendentesColumn } from '@/components/pendentes-column'
 import type { Sessao } from '@/lib/types'
+import { decryptJsonField } from '@/lib/supabase/encrypt'
+import { PageTourWrapper } from '@/components/page-tour-wrapper'
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   agendada: { label: 'Agendada', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -27,11 +29,17 @@ export default async function SessoesPage() {
     .from('pacientes')
     .select('id, nome') as { data: { id: string; nome: string }[] | null }
 
-  const sessoes = s || []
+  const sessoes = (s || []).map(sessao => {
+    if (sessao.resumo) (sessao as any).resumo = decryptJsonField(sessao.resumo)
+    return sessao
+  })
   const pacientes = p || []
   const pacienteMap = new Map(pacientes.map(p => [p.id, p]))
 
-  // Split into 3 kanban columns
+  const finalizadas = sessoes.filter(s =>
+    ['realizada', 'falta', 'cancelada', 'em_andamento'].includes(s.status)
+  )
+
   const futuras = sessoes
     .filter(s => ['agendada', 'remarcada'].includes(s.status))
     .sort((a, b) => a.data_hora.localeCompare(b.data_hora))
@@ -43,12 +51,8 @@ export default async function SessoesPage() {
     pacienteNome: pacienteMap.get(s.paciente_id)?.nome || 'Paciente',
     numeroSessao: s.numero_sessao,
     dataHora: s.data_hora,
-    sintese: s.resumo?.resumo_sessao?.sintese || null,
+    sintese: s.resumo?.resumo?.sintese || null,
   }))
-
-  const recentes = sessoes.filter(s =>
-    ['realizada', 'falta', 'cancelada', 'em_andamento'].includes(s.status)
-  )
 
   function getInitials(nome: string) {
     return nome.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -56,12 +60,13 @@ export default async function SessoesPage() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-6 overflow-hidden">
+      <PageTourWrapper pageId="sessoes" />
       {/* Header */}
-      <div className="flex items-start justify-between flex-shrink-0">
+      <div id="sessoes-header" className="flex items-start justify-between flex-shrink-0">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Sessões</h1>
           <p className="text-muted-foreground mt-1">
-            {futuras.length} agendadas · {pendentes.length} aguardando validação · {recentes.length} recentes
+            {finalizadas.length} finalizadas · {futuras.length} agendadas · {pendentes.length} aguardando aprovação
           </p>
         </div>
         <Link
@@ -77,8 +82,67 @@ export default async function SessoesPage() {
 
       {/* Kanban columns */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+        {/* Finalizadas */}
+        <div id="finalizadas-column" className="flex flex-col min-h-0 bg-gray-50/50 rounded-xl border border-gray-200 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h2 className="text-sm font-semibold text-gray-900">Finalizadas</h2>
+            {finalizadas.length > 0 && (
+              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">
+                {finalizadas.length}
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
+            {finalizadas.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-400">Nenhuma sessão finalizada</p>
+              </div>
+            ) : (
+              finalizadas.map((sessao) => {
+                const paciente = pacienteMap.get(sessao.paciente_id)
+                const nome = paciente?.nome || 'Paciente'
+                const statusInfo = statusConfig[sessao.status] || statusConfig.realizada
+                return (
+                  <Link
+                    key={sessao.id}
+                    href={`/sessoes/${sessao.id}`}
+                    className="block bg-white rounded-lg border border-gray-100 p-3 hover:shadow-sm hover:border-gray-200 transition-all"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-slate-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-[10px] font-semibold text-gray-600">
+                          {getInitials(nome)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 truncate">{nome}</span>
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${statusInfo.color}`}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {sessao.numero_sessao && `#${sessao.numero_sessao} · `}
+                          {formatDate(sessao.data_hora)}
+                          {sessao.duracao_real && ` · ${sessao.duracao_real} min`}
+                        </p>
+                        {sessao.resumo?.resumo?.sintese && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-1">{sessao.resumo.resumo.sintese}</p>
+                        )}
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })
+            )}
+          </div>
+        </div>
+
         {/* Futuras */}
-        <div className="flex flex-col min-h-0 bg-blue-50/30 rounded-xl border border-blue-100 overflow-hidden">
+        <div id="futuras-column" className="flex flex-col min-h-0 bg-blue-50/30 rounded-xl border border-blue-100 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-blue-100 flex-shrink-0">
             <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
@@ -132,11 +196,11 @@ export default async function SessoesPage() {
           </div>
         </div>
 
-        {/* Aguardando Validação */}
-        <div className="flex flex-col min-h-0 bg-amber-50/30 rounded-xl border border-amber-100 overflow-hidden">
+        {/* Aguardando Aprovação */}
+        <div id="aprovacao-column" className="flex flex-col min-h-0 bg-amber-50/30 rounded-xl border border-amber-100 overflow-hidden md:col-span-2 lg:col-span-1">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-100 flex-shrink-0">
             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
-            <h2 className="text-sm font-semibold text-gray-900">Aguardando Validação</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Aguardando Aprovação</h2>
             {pendentes.length > 0 && (
               <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                 {pendentes.length}
@@ -145,65 +209,6 @@ export default async function SessoesPage() {
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
             <PendentesColumn sessoes={pendentesData} />
-          </div>
-        </div>
-
-        {/* Recentes */}
-        <div className="flex flex-col min-h-0 bg-gray-50/50 rounded-xl border border-gray-200 overflow-hidden md:col-span-2 lg:col-span-1">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200 flex-shrink-0">
-            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h2 className="text-sm font-semibold text-gray-900">Recentes</h2>
-            {recentes.length > 0 && (
-              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full font-medium">
-                {recentes.length}
-              </span>
-            )}
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-            {recentes.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-sm text-gray-400">Nenhuma sessão recente</p>
-              </div>
-            ) : (
-              recentes.map((sessao) => {
-                const paciente = pacienteMap.get(sessao.paciente_id)
-                const nome = paciente?.nome || 'Paciente'
-                const statusInfo = statusConfig[sessao.status] || statusConfig.realizada
-                return (
-                  <Link
-                    key={sessao.id}
-                    href={`/sessoes/${sessao.id}`}
-                    className="block bg-white rounded-lg border border-gray-100 p-3 hover:shadow-sm hover:border-gray-200 transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-100 to-slate-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-[10px] font-semibold text-gray-600">
-                          {getInitials(nome)}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 truncate">{nome}</span>
-                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${statusInfo.color}`}>
-                            {statusInfo.label}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {sessao.numero_sessao && `#${sessao.numero_sessao} · `}
-                          {formatDate(sessao.data_hora)}
-                          {sessao.duracao_real && ` · ${sessao.duracao_real} min`}
-                        </p>
-                        {sessao.resumo?.resumo_sessao?.sintese && (
-                          <p className="text-xs text-gray-500 mt-1 line-clamp-1">{sessao.resumo.resumo_sessao.sintese}</p>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                )
-              })
-            )}
           </div>
         </div>
       </div>

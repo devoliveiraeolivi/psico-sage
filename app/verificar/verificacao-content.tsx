@@ -122,7 +122,7 @@ export function VerificacaoContent() {
         )}
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Sistema de verificação de documentos — PsicoSage
+          Sistema de verificação de documentos — PsicoApp
         </p>
       </div>
     </div>
