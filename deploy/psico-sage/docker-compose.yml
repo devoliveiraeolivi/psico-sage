@@ -31,12 +31,13 @@ services:
         - "traefik.http.routers.psicosage.entrypoints=websecure"
         - "traefik.http.routers.psicosage.tls.certresolver=letsencryptresolver"
         - "traefik.http.services.psicosage.loadbalancer.server.port=3000"
+        - "traefik.docker.network=network_swarm_public"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
 networks:
   network_swarm_public:
