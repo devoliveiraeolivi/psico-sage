@@ -47,8 +47,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SUPABASE_URL=https://olixkvyvttkrnwuzjzgd.supabase.co
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9saXhrdnl2dHRrcm53dXpqemdkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTg0NDIzOCwiZXhwIjoyMDg3NDIwMjM4fQ.-eTu64kU1uoE5n_QH6TBM3Zhqm7g4tWQ-_ghUlgom6k
             NEXT_PUBLIC_APP_URL=https://psico.oliveiraeolivi.cloud
           cache-from: type=gha
           cache-to: type=gha,mode=max
