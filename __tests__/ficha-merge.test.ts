@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches, consolidateFicha } from '@/lib/ficha/merge'
+import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches, consolidateFicha, projectToLegacy, seedFichaFromLegacy } from '@/lib/ficha/merge'
 import type { FichaPatch } from '@/lib/types'
 
 describe('emptyFicha', () => {
@@ -85,5 +85,28 @@ describe('consolidateFicha', () => {
     const s2 = consolidateFicha(s1, [p({ id: 'h2', path: 'estado_mental.humor', depois: 'disfórico' })], 'sess-2', '2026-06-27T14:00:00.000Z')
     expect(s2.historico.humor).toHaveLength(2)
     expect(s2.changelog.map((c) => c.sessao_id)).toEqual(['sess-1', 'sess-2'])
+  })
+})
+
+describe('projeção e seed (round-trip sem regressão)', () => {
+  it('projeta sintese e humor do atual para o resumo legado', () => {
+    const f = emptyFicha()
+    f.atual.sintese_clinica = 'Paciente em fase de estabilização.'
+    f.atual.estado_mental.humor = 'eutímico'
+    const legacy = projectToLegacy(f)
+    expect(legacy.resumo.sintese).toBe('Paciente em fase de estabilização.')
+    expect(legacy.resumo.humor).toBe('eutímico')
+  })
+
+  it('seed a partir do legado preserva sintese ao projetar de volta', () => {
+    const ficha = seedFichaFromLegacy({ sintese: 'Quadro ansioso crônico.', humor: 'ansioso' }, {})
+    const legacy = projectToLegacy(ficha)
+    expect(legacy.resumo.sintese).toBe('Quadro ansioso crônico.')
+    expect(ficha.atual.estado_mental.humor).toBe('ansioso')
+  })
+
+  it('seed com legado vazio retorna ficha vazia', () => {
+    const ficha = seedFichaFromLegacy(null, null)
+    expect(ficha).toEqual(emptyFicha())
   })
 })

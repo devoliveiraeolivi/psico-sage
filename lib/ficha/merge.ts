@@ -1,6 +1,6 @@
 import type {
   PacienteFicha, FichaAtual, FichaHistorico, FichaHistoricoItem,
-  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico,
+  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico, HistoricoItem,
 } from '@/lib/types'
 
 export function emptyFichaAtual(): FichaAtual {
@@ -107,4 +107,58 @@ export function consolidateFicha(
     changelog: [...changelogLimpo, { sessao_id: sessaoId, data: dataHora, patches: acceptedPatches }],
     consolidacao_pendente: ficha.consolidacao_pendente,
   }
+}
+
+export function projectToLegacy(ficha: PacienteFicha): { resumo: PacienteResumo; historico: PacienteHistorico } {
+  const a = ficha.atual
+  const resumo: PacienteResumo = {
+    sintese: a.sintese_clinica ?? undefined,
+    humor: a.estado_mental.humor ?? undefined,
+    tarefas: a.metas_plano.tarefas_andamento.join('; ') || undefined,
+    alertas: a.alertas_ativos.join('; ') || undefined,
+    crencas_nucleares: a.padroes_dinamicas.crencas_nucleares,
+    recursos_paciente: a.padroes_dinamicas.recursos,
+    pessoas_chave: a.pessoas_chave.map((p) => ({ nome: p.nome, tipo: p.tipo, categoria: p.categoria })),
+    risco: {
+      suicida: a.estado_mental.risco_suicida,
+      heteroagressivo: a.estado_mental.risco_heteroagressivo,
+      ultima_avaliacao: a.estado_mental.ultima_avaliacao ?? '',
+    },
+    ultima_atualizacao: ficha.changelog.at(-1)?.data,
+    ultima_sessao_id: ficha.changelog.at(-1)?.sessao_id,
+  }
+  // historico legado: mapeia trilhas com o mesmo shape de HistoricoItem
+  const historico: PacienteHistorico = {}
+  for (const [trilha, itens] of Object.entries(ficha.historico)) {
+    historico[trilha] = (itens ?? []).map((i) => ({
+      data: i.data, sessao_id: i.sessao_id, valor: i.valor, acao: i.acao,
+    }))
+  }
+  return { resumo, historico }
+}
+
+export function seedFichaFromLegacy(
+  resumo: PacienteResumo | null, historico: PacienteHistorico | null,
+): PacienteFicha {
+  if (!resumo && !historico) return emptyFicha()
+  const ficha = emptyFicha()
+  if (resumo) {
+    ficha.atual.sintese_clinica = resumo.sintese ?? null
+    ficha.atual.estado_mental.humor = resumo.humor ?? null
+    if (resumo.risco) {
+      ficha.atual.estado_mental.risco_suicida = resumo.risco.suicida || 'não avaliado'
+      ficha.atual.estado_mental.risco_heteroagressivo = resumo.risco.heteroagressivo || 'não avaliado'
+      ficha.atual.estado_mental.ultima_avaliacao = resumo.risco.ultima_avaliacao || null
+    }
+    ficha.atual.padroes_dinamicas.crencas_nucleares = resumo.crencas_nucleares ?? []
+    ficha.atual.padroes_dinamicas.recursos = resumo.recursos_paciente ?? []
+  }
+  if (historico) {
+    for (const [trilha, itens] of Object.entries(historico)) {
+      ficha.historico[trilha] = (itens ?? []).map((i) => ({
+        data: i.data, sessao_id: i.sessao_id, valor: i.valor, acao: (i.acao ?? 'adicionado') as FichaPatch['tipo'],
+      }))
+    }
+  }
+  return ficha
 }
