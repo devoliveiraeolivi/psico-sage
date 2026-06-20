@@ -78,6 +78,7 @@ export function decryptPaciente(paciente: Record<string, any>): Record<string, a
   if (!paciente) return paciente
   if ('resumo' in paciente) paciente.resumo = decryptJsonField(paciente.resumo)
   if ('historico' in paciente) paciente.historico = decryptJsonField(paciente.historico)
+  if ('ficha' in paciente) paciente.ficha = decryptJsonField(paciente.ficha)
   if ('notas' in paciente) paciente.notas = decryptTextField(paciente.notas)
   return paciente
 }
