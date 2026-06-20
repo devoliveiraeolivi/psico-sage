@@ -6,6 +6,8 @@ import type { SessaoPreparacao, SessaoResumo, PacienteResumo } from '@/lib/types
 import { formatDate } from '@/lib/utils'
 import { ProntuarioView } from './prontuario-view'
 import { useToast } from './toast'
+import { RecomendacoesTab } from './recomendacoes-tab'
+import type { SessaoRecomendacoes } from '@/lib/types'
 
 interface SessaoTabsProps {
   preparacao: SessaoPreparacao | null
@@ -16,11 +18,13 @@ interface SessaoTabsProps {
   hasAudio: boolean
   dataHora: string
   recordingStatus?: string | null
+  recomendacoes: SessaoRecomendacoes | null
+  conducaoAnterior?: import('@/lib/types').ConducaoProximaSessao[]
 }
 
 // Note: pacienteResumo and pacienteHistorico are now passed to ContextoPacienteSidebar separately
 
-type TabId = 'preparacao' | 'resumo' | 'transcricao'
+type TabId = 'preparacao' | 'resumo' | 'recomendacoes' | 'transcricao'
 
 export function SessaoTabs({
   preparacao,
@@ -31,6 +35,8 @@ export function SessaoTabs({
   hasAudio,
   dataHora,
   recordingStatus,
+  recomendacoes,
+  conducaoAnterior,
 }: SessaoTabsProps) {
   const [activeTab, setActiveTab] = useState<TabId>(jaRealizada ? 'resumo' : 'preparacao')
 
@@ -51,6 +57,16 @@ export function SessaoTabs({
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" />
+        </svg>
+      ),
+      available: jaRealizada,
+    },
+    {
+      id: 'recomendacoes',
+      label: 'Recomendações',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
         </svg>
       ),
       available: jaRealizada,
@@ -102,10 +118,13 @@ export function SessaoTabs({
       {/* Tab Content */}
       <div className="p-5 flex-1">
         {activeTab === 'preparacao' && (
-          <PreparacaoTab preparacao={preparacao} />
+          <PreparacaoTab preparacao={preparacao} conducaoAnterior={conducaoAnterior} />
         )}
         {activeTab === 'resumo' && (
           <ResumoTab resumo={resumo} jaRealizada={jaRealizada} sessaoId={sessaoId} hasAudio={hasAudio} dataHora={dataHora} recordingStatus={recordingStatus} />
+        )}
+        {activeTab === 'recomendacoes' && (
+          <RecomendacoesTab recomendacoes={recomendacoes} sessaoId={sessaoId} />
         )}
         {activeTab === 'transcricao' && (
           <TranscricaoTab integra={integra} />
@@ -232,8 +251,9 @@ export function ContextoPacienteSidebar({
   )
 }
 
-function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) {
-  if (!preparacao) {
+function PreparacaoTab({ preparacao, conducaoAnterior }: { preparacao: SessaoPreparacao | null; conducaoAnterior?: import('@/lib/types').ConducaoProximaSessao[] }) {
+  const temConducao = conducaoAnterior && conducaoAnterior.length > 0
+  if (!preparacao && !temConducao) {
     return (
       <div className="text-center py-8 text-gray-400">
         <svg className="w-8 h-8 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -246,8 +266,23 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
 
   return (
     <div className="space-y-5">
+      {/* Condução sugerida pela última sessão realizada (loop fechado) */}
+      {temConducao && (
+        <div className="bg-sky-50/60 rounded-xl border border-sky-100 p-4">
+          <div className="text-xs font-semibold text-sky-700 uppercase tracking-wider mb-2">Vindo da última sessão</div>
+          <ul className="space-y-1.5">
+            {conducaoAnterior!.map((c, i) => (
+              <li key={i} className="text-sm text-sky-900 flex items-start gap-2">
+                <span className="text-xs px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded shrink-0">{c.tipo}</span>
+                {c.conteudo}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Contexto */}
-      {preparacao.contexto && (
+      {preparacao?.contexto && (
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Contexto</div>
           <p className="text-sm text-gray-700 leading-relaxed">{preparacao.contexto}</p>
@@ -255,7 +290,7 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
       )}
 
       {/* Pontos a Retomar - Checklist */}
-      {preparacao.pontos_retomar && preparacao.pontos_retomar.length > 0 && (
+      {preparacao?.pontos_retomar && preparacao.pontos_retomar.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pontos para Hoje</span>
@@ -276,7 +311,7 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
       )}
 
       {/* Tarefas Pendentes */}
-      {preparacao.tarefas_pendentes && preparacao.tarefas_pendentes.length > 0 && (
+      {preparacao?.tarefas_pendentes && preparacao.tarefas_pendentes.length > 0 && (
         <div>
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Tarefas Pendentes</div>
           <div className="space-y-2">
@@ -295,7 +330,7 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
       )}
 
       {/* Sugestão IA - Card especial */}
-      {preparacao.perguntas_sugeridas && preparacao.perguntas_sugeridas.length > 0 && (
+      {preparacao?.perguntas_sugeridas && preparacao.perguntas_sugeridas.length > 0 && (
         <div className="bg-gradient-to-br from-sky-50 to-blue-50 rounded-xl border border-sky-200 p-5">
           <div className="flex items-center gap-2 text-xs font-semibold text-sky-700 uppercase tracking-wider mb-3">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -314,7 +349,7 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
       )}
 
       {/* Outras sugestões */}
-      {preparacao.sugestoes && preparacao.sugestoes.length > 0 && (
+      {preparacao?.sugestoes && preparacao.sugestoes.length > 0 && (
         <div>
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sugestões</div>
           <ul className="space-y-2">
@@ -331,7 +366,7 @@ function PreparacaoTab({ preparacao }: { preparacao: SessaoPreparacao | null }) 
       )}
 
       {/* Alertas */}
-      {preparacao.alertas && preparacao.alertas.length > 0 && (
+      {preparacao?.alertas && preparacao.alertas.length > 0 && (
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-amber-700 uppercase tracking-wider mb-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

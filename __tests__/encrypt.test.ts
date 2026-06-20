@@ -90,6 +90,23 @@ describe('supabase/encrypt helpers', () => {
       expect(sessao.status).toBe('realizada') // untouched
     })
 
+    it('decrypts the recomendacoes field in-place', async () => {
+      const { encryptJsonField, decryptSessao } = await import('@/lib/supabase/encrypt')
+      const recomendacoes = {
+        tecnicas_sugeridas: [{ abordagem: 'TCC', nome: 'Reestruturação cognitiva', descricao_curta: 'x', quando_usar: 'y' }],
+        hipoteses_diagnosticas: [],
+        escalas_sugeridas: [],
+        psicoeducacao: [],
+        conducao_proxima_sessao: [],
+        alertas_clinicos: [],
+        gerado_em: '2026-06-20T00:00:00.000Z',
+        modelo_ia_usado: 'gpt-5.2',
+      }
+      const sessao = { id: '1', recomendacoes: encryptJsonField(recomendacoes) }
+      decryptSessao(sessao)
+      expect(sessao.recomendacoes).toEqual(recomendacoes)
+    })
+
     it('handles null sessao', async () => {
       const { decryptSessao } = await import('@/lib/supabase/encrypt')
       expect(decryptSessao(null as any)).toBeNull()

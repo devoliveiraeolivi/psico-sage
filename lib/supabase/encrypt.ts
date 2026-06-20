@@ -7,6 +7,7 @@
  * Encrypted fields:
  *   sessoes.integra     (text)  — full therapy transcription
  *   sessoes.resumo      (jsonb) — clinical prontuário
+ *   sessoes.recomendacoes (jsonb) — recomendações clínicas
  *   pacientes.resumo    (jsonb) — patient clinical state
  *   pacientes.historico (jsonb) — longitudinal patient history
  *   pacientes.notas     (text)  — free-form therapist notes
@@ -70,6 +71,7 @@ export function decryptSessao(sessao: Record<string, any>): Record<string, any> 
   if (!sessao) return sessao
   if ('integra' in sessao) sessao.integra = decryptTextField(sessao.integra)
   if ('resumo' in sessao) sessao.resumo = decryptJsonField(sessao.resumo)
+  if ('recomendacoes' in sessao) sessao.recomendacoes = decryptJsonField(sessao.recomendacoes)
   return sessao
 }
 

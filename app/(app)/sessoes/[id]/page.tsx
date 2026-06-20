@@ -9,7 +9,7 @@ import { DeleteSessaoButton } from '@/components/delete-sessao-button'
 import { ComprovanteSessao } from '@/components/comprovante-sessao'
 import { createClient } from '@/lib/supabase/server'
 import { gerarCodigoVerificacao } from '@/lib/comprovante'
-import { decryptSessao, decryptPaciente } from '@/lib/supabase/encrypt'
+import { decryptSessao, decryptPaciente, decryptJsonField } from '@/lib/supabase/encrypt'
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   agendada: { label: 'Agendada', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -52,6 +52,25 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
   const pacienteResumo = paciente?.resumo || {}
   const jaRealizada = sessao.status === 'realizada' || sessao.status === 'aguardando_aprovacao'
   const statusInfo = statusConfig[sessao.status] || statusConfig.agendada
+
+  // Loop fechado: condução sugerida pela última sessão realizada anterior
+  let conducaoAnterior: import('@/lib/types').ConducaoProximaSessao[] = []
+  if (sessao.status !== 'realizada') {
+    const { data: anterior } = await db
+      .from('sessoes')
+      .select('recomendacoes')
+      .eq('paciente_id', sessao.paciente_id)
+      .eq('status', 'realizada')
+      .lt('data_hora', sessao.data_hora)
+      .order('data_hora', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (anterior?.recomendacoes) {
+      const rec = decryptJsonField<import('@/lib/types').SessaoRecomendacoes>(anterior.recomendacoes)
+      conducaoAnterior = rec?.conducao_proxima_sessao ?? []
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -169,6 +188,8 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
             hasAudio={!!sessao.audio_url}
             dataHora={sessao.data_hora}
             recordingStatus={sessao.recording_status ?? null}
+            recomendacoes={sessao.recomendacoes ?? null}
+            conducaoAnterior={conducaoAnterior}
           />
         </div>
         <div>
