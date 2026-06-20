@@ -196,6 +196,10 @@ export function ApprovalModal({
       }
       setDisplayedResumo(editedResumo)
       setMode('review')
+      // Invalidate cached preview so next "Aprovar e atualizar ficha" fetches a fresh
+      // /consolidar-preview against the updated resumo (not stale patches from pre-edit resumo).
+      setPatches(null)
+      setAceitos({})
       router.refresh()
     } catch {
       toast('Erro ao salvar edição. Tente novamente.', 'error')
@@ -226,6 +230,10 @@ export function ApprovalModal({
       setAiInstrucoes('')
       setShowAiAdjust(false)
       setAdjustResult(data.descricao_ajustes || 'Ajuste realizado.')
+      // Invalidate cached preview so the next "Aprovar e atualizar ficha" refetches
+      // /consolidar-preview against the AI-adjusted resumo (not stale pre-adjust patches).
+      setPatches(null)
+      setAceitos({})
     } catch {
       setAdjustError('Erro de conexão. Tente novamente.')
     } finally {

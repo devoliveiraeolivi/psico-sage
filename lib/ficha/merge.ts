@@ -116,10 +116,14 @@ export function projectToLegacy(ficha: PacienteFicha, priorResumo?: PacienteResu
   // are preserved. Ficha-modeled fields below override the spread values.
   const resumo: PacienteResumo = {
     ...(priorResumo ?? {}),
-    sintese: a.sintese_clinica ?? undefined,
-    humor: a.estado_mental.humor ?? undefined,
-    tarefas: a.metas_plano.tarefas_andamento.join('; ') || undefined,
-    alertas: a.alertas_ativos.join('; ') || undefined,
+    // Conditional spreads: only override priorResumo when the ficha actually has a value.
+    // Direct `key: undefined` would wipe the prior value because the key is set (even if undefined)
+    // and JSON.stringify later drops it, losing data on persist.
+    ...(a.sintese_clinica != null && { sintese: a.sintese_clinica }),
+    ...(a.estado_mental.humor != null && { humor: a.estado_mental.humor }),
+    ...(a.metas_plano.tarefas_andamento.length > 0 && { tarefas: a.metas_plano.tarefas_andamento.join('; ') }),
+    ...(a.alertas_ativos.length > 0 && { alertas: a.alertas_ativos.join('; ') }),
+    // Fields the ficha fully owns and always recomputes — direct assignment is correct here.
     crencas_nucleares: a.padroes_dinamicas.crencas_nucleares,
     recursos_paciente: a.padroes_dinamicas.recursos,
     pessoas_chave: a.pessoas_chave.map((p) => ({ nome: p.nome, tipo: p.tipo, categoria: p.categoria })),

@@ -167,6 +167,22 @@ describe('projectToLegacy — preserva campos não-modelados do prior resumo', (
     expect(resumo.sintese).toBe('Teste sem prior')
     expect(resumo.momento).toBeUndefined()
   })
+
+  it('preserva sintese do priorResumo quando ficha não tem sintese_clinica (RED→GREEN: ?? undefined wipe fix)', () => {
+    // RED scenario (bug): `sintese: a.sintese_clinica ?? undefined` sets `sintese: undefined`
+    // which overrides the priorResumo spread value, wiping 'Quadro ansioso crônico.' to undefined.
+    // GREEN (fix): conditional spread `...(a.sintese_clinica != null && { sintese: a.sintese_clinica })`
+    // omits the key entirely when sintese_clinica is null, leaving the prior value intact.
+    const ficha = emptyFicha()
+    // sintese_clinica stays null, but humor is set
+    ficha.atual.estado_mental.humor = 'eutímico'
+    const priorResumo = { sintese: 'Quadro ansioso crônico.', humor: 'ansioso' } as any
+    const { resumo } = projectToLegacy(ficha, priorResumo)
+    // Prior sintese preserved (ficha has no value for it)
+    expect(resumo.sintese).toBe('Quadro ansioso crônico.')
+    // Ficha-set humor overrides prior
+    expect(resumo.humor).toBe('eutímico')
+  })
 })
 
 describe('deterministicPatches (fallback)', () => {
