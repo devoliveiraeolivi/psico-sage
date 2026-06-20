@@ -121,8 +121,8 @@ export function projectToLegacy(ficha: PacienteFicha, priorResumo?: PacienteResu
     // and JSON.stringify later drops it, losing data on persist.
     ...(a.sintese_clinica != null && { sintese: a.sintese_clinica }),
     ...(a.estado_mental.humor != null && { humor: a.estado_mental.humor }),
-    ...(a.metas_plano.tarefas_andamento.length > 0 && { tarefas: a.metas_plano.tarefas_andamento.join('; ') }),
-    ...(a.alertas_ativos.length > 0 && { alertas: a.alertas_ativos.join('; ') }),
+    tarefas: a.metas_plano.tarefas_andamento.join('; ') || undefined,
+    alertas: a.alertas_ativos.join('; ') || undefined,
     // Fields the ficha fully owns and always recomputes — direct assignment is correct here.
     crencas_nucleares: a.padroes_dinamicas.crencas_nucleares,
     recursos_paciente: a.padroes_dinamicas.recursos,

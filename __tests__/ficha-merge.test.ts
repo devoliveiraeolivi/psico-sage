@@ -185,6 +185,34 @@ describe('projectToLegacy — preserva campos não-modelados do prior resumo', (
   })
 })
 
+describe('projectToLegacy — tarefas/alertas empty array clears prior (direct assign)', () => {
+  it('tarefas cleared when ficha empty: empty array overrides stale prior (RED→GREEN)', () => {
+    // Bug scenario: with conditional spread, empty array omits the key so stale priorResumo.tarefas survives.
+    // Fix: direct assignment `tarefas: [].join('; ') || undefined` writes undefined, JSON-drops it on persist.
+    const ficha = emptyFicha()
+    ficha.atual.metas_plano.tarefas_andamento = [] // explicitly empty
+    const priorResumo = { tarefas: 'tarefa antiga' } as any
+    const { resumo } = projectToLegacy(ficha, priorResumo)
+    expect(resumo.tarefas).toBeUndefined()
+  })
+
+  it('tarefas reflects ficha when non-empty, overriding prior', () => {
+    const ficha = emptyFicha()
+    ficha.atual.metas_plano.tarefas_andamento = ['nova tarefa']
+    const priorResumo = { tarefas: 'antiga' } as any
+    const { resumo } = projectToLegacy(ficha, priorResumo)
+    expect(resumo.tarefas).toBe('nova tarefa')
+  })
+
+  it('alertas cleared when ficha empty: empty array overrides stale prior', () => {
+    const ficha = emptyFicha()
+    ficha.atual.alertas_ativos = [] // explicitly empty
+    const priorResumo = { alertas: 'alerta antigo' } as any
+    const { resumo } = projectToLegacy(ficha, priorResumo)
+    expect(resumo.alertas).toBeUndefined()
+  })
+})
+
 describe('deterministicPatches (fallback)', () => {
   it('emite patch de humor quando difere do atual', () => {
     const atual = emptyFichaAtual()
