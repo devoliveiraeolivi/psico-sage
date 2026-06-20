@@ -146,6 +146,29 @@ const baseResumo = (): SessaoResumo => ({
   anamnese: { infancia: null, adolescencia: null, vida_adulta: null, familia_origem: null, relacionamentos: null, marcos_vida: null, historico_tratamentos: null },
 })
 
+describe('projectToLegacy — preserva campos não-modelados do prior resumo', () => {
+  it('preserva momento, diagnosticos e conflitos do priorResumo enquanto campos modelados vêm da ficha', () => {
+    const ficha = emptyFicha()
+    ficha.atual.estado_mental.humor = 'eutímico'
+    const priorResumo = { momento: 'estável', diagnosticos: 'TAG', conflitos: 'mãe' } as any
+    const { resumo } = projectToLegacy(ficha, priorResumo)
+    // Campos não-modelados devem ser preservados do prior resumo
+    expect(resumo.momento).toBe('estável')
+    expect(resumo.diagnosticos).toBe('TAG')
+    expect(resumo.conflitos).toBe('mãe')
+    // Campo modelado pela ficha deve refletir a ficha
+    expect(resumo.humor).toBe('eutímico')
+  })
+
+  it('sem priorResumo continua funcionando normalmente (retro-compatibilidade)', () => {
+    const ficha = emptyFicha()
+    ficha.atual.sintese_clinica = 'Teste sem prior'
+    const { resumo } = projectToLegacy(ficha)
+    expect(resumo.sintese).toBe('Teste sem prior')
+    expect(resumo.momento).toBeUndefined()
+  })
+})
+
 describe('deterministicPatches (fallback)', () => {
   it('emite patch de humor quando difere do atual', () => {
     const atual = emptyFichaAtual()

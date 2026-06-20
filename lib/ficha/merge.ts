@@ -109,9 +109,13 @@ export function consolidateFicha(
   }
 }
 
-export function projectToLegacy(ficha: PacienteFicha): { resumo: PacienteResumo; historico: PacienteHistorico } {
+export function projectToLegacy(ficha: PacienteFicha, priorResumo?: PacienteResumo | null): { resumo: PacienteResumo; historico: PacienteHistorico } {
   const a = ficha.atual
+  // Spread prior resumo first so unmodeled fields (momento, diagnosticos, conflitos,
+  // traumas, padroes, gatilhos, exame_mental_resumo, medicamentos_atuais, temas_recorrentes, etc.)
+  // are preserved. Ficha-modeled fields below override the spread values.
   const resumo: PacienteResumo = {
+    ...(priorResumo ?? {}),
     sintese: a.sintese_clinica ?? undefined,
     humor: a.estado_mental.humor ?? undefined,
     tarefas: a.metas_plano.tarefas_andamento.join('; ') || undefined,

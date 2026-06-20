@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import type { SessaoResumo, FichaPatch, PacienteFicha } from '@/lib/types'
+import type { SessaoResumo, FichaPatch, PacienteFicha, PacienteResumo } from '@/lib/types'
 import { calcularProximaSessao } from '@/lib/next-session'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
@@ -45,24 +45,30 @@ export async function POST(
       return NextResponse.json({ error: 'Resumo ou paciente não encontrado' }, { status: 400 })
     }
 
-    // Read accepted patches from request body (may be absent for fallback path)
+    // Read accepted patches and reviewed flag from request body (may be absent for fallback path)
     const body = await request.json().catch(() => ({}))
     let acceptedPatches: FichaPatch[] = Array.isArray(body?.acceptedPatches) ? body.acceptedPatches : []
+    // reviewed=true means the therapist went through the diff UI; even an empty selection is intentional
+    const reviewed = body?.reviewed === true
 
     // Decrypt patient ficha; fall back to empty structure if absent
     const fichaDecrypted = decryptJsonField<PacienteFicha>(paciente.ficha)
     const fichaBase = fichaDecrypted?.atual ? fichaDecrypted : emptyFicha()
 
-    // Fallback: no patches supplied (IA #2 unavailable or first-time) → deterministic rules
+    // Fallback: no patches supplied AND not reviewed (IA #2 unavailable or direct approve) → deterministic rules
+    // When reviewed=true, the therapist consciously rejected all patches → honour the empty list as-is
     let pendente = false
-    if (acceptedPatches.length === 0) {
+    if (!reviewed && acceptedPatches.length === 0) {
       acceptedPatches = deterministicPatches(fichaBase.atual, resumo)
       pendente = true
     }
 
+    // Decrypt the patient's existing legacy resumo so unmodeled fields are preserved
+    const pacienteResumoDecrypted = decryptJsonField<PacienteResumo>(paciente.resumo)
+
     const fichaNova = consolidateFicha(fichaBase, acceptedPatches, id, sessao.data_hora)
     fichaNova.consolidacao_pendente = pendente
-    const { resumo: novoResumo, historico: novoHistorico } = projectToLegacy(fichaNova)
+    const { resumo: novoResumo, historico: novoHistorico } = projectToLegacy(fichaNova, pacienteResumoDecrypted)
 
     // Atomic approve: update session + patient in a single DB transaction
     // Encrypt sensitive fields before persisting

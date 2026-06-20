@@ -166,7 +166,7 @@ export function ApprovalModal({
       const res = await fetch(`/api/sessoes/${sessaoId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acceptedPatches }),
+        body: JSON.stringify({ acceptedPatches, reviewed: true }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
