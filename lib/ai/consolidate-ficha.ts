@@ -9,24 +9,15 @@ const MODEL = 'gpt-5.2'
 const RISCO_PATHS = new Set(['estado_mental.risco_suicida', 'estado_mental.risco_heteroagressivo'])
 
 // Paths que a IA pode emitir (escalares revisáveis + listas do mapa de histórico)
-const SCALAR_PATHS = new Set([
+const SCALAR_PATHS = [
   'sintese_clinica', 'estado_mental.humor', 'estado_mental.afeto', 'estado_mental.insight',
   'estado_mental.juizo_critica', 'estado_mental.risco_suicida', 'estado_mental.risco_heteroagressivo',
   'queixas_ativas.queixa', 'queixas_ativas.frequencia', 'farmacologia.adesao',
   'farmacologia.encaminhamento', 'metas_plano.foco_proxima_sessao',
   'anamnese.infancia', 'anamnese.adolescencia', 'anamnese.vida_adulta', 'anamnese.familia_origem',
   'anamnese.relacionamentos', 'anamnese.marcos_vida', 'anamnese.historico_tratamentos',
-])
-const VALID_PATHS = new Set<string>(
-  [
-    'sintese_clinica', 'estado_mental.humor', 'estado_mental.afeto', 'estado_mental.insight',
-    'estado_mental.juizo_critica', 'estado_mental.risco_suicida', 'estado_mental.risco_heteroagressivo',
-    'queixas_ativas.queixa', 'queixas_ativas.frequencia', 'farmacologia.adesao',
-    'farmacologia.encaminhamento', 'metas_plano.foco_proxima_sessao',
-    'anamnese.infancia', 'anamnese.adolescencia', 'anamnese.vida_adulta', 'anamnese.familia_origem',
-    'anamnese.relacionamentos', 'anamnese.marcos_vida', 'anamnese.historico_tratamentos',
-  ].concat(Object.keys(PATH_TO_HISTORICO))
-)
+] as const
+const VALID_PATHS = new Set<string>([...SCALAR_PATHS, ...Object.keys(PATH_TO_HISTORICO)])
 const VALID_TIPOS = new Set(['adicionado', 'atualizado', 'resolvido', 'concluida'])
 
 function slug(s: string): string {
@@ -92,7 +83,11 @@ export async function consolidateFichaAI(atual: FichaAtual, resumo: SessaoResumo
     })
     const content = response.choices[0]?.message?.content
     if (!content) throw new Error('OpenAI retornou resposta vazia')
-    return JSON.parse(content)
+    try {
+      return JSON.parse(content)
+    } catch (parseError) {
+      throw new Error(`OpenAI retornou JSON inválido: ${(content || '').slice(0, 200)}`)
+    }
   }, { maxRetries: 2, timeoutMs: 120_000, baseDelayMs: 3000,
        onRetry: (e, a) => logger.warn('consolidate-ficha retry', { attempt: a, error: e.message }) })
 
