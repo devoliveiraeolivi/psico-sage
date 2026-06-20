@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches } from '@/lib/ficha/merge'
+import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches, consolidateFicha } from '@/lib/ficha/merge'
 import type { FichaPatch } from '@/lib/types'
 
 describe('emptyFicha', () => {
@@ -56,5 +56,34 @@ describe('applyPatches', () => {
     const atual = emptyFichaAtual()
     const out = applyPatches(atual, [])
     expect(out).toEqual(atual)
+  })
+})
+
+describe('consolidateFicha', () => {
+  const HORA = '2026-06-20T14:00:00.000Z'
+  const humorPatch = p({ id: 'h1', path: 'estado_mental.humor', tipo: 'atualizado', antes: 'ansioso', depois: 'eutímico' })
+
+  it('aplica patch e cria entrada de histórico com data_hora da sessão', () => {
+    const out = consolidateFicha(emptyFicha(), [humorPatch], 'sess-1', HORA)
+    expect(out.atual.estado_mental.humor).toBe('eutímico')
+    expect(out.historico.humor).toEqual([
+      { data: HORA, sessao_id: 'sess-1', valor: 'eutímico', acao: 'atualizado' },
+    ])
+    expect(out.changelog).toHaveLength(1)
+    expect(out.changelog[0].sessao_id).toBe('sess-1')
+  })
+
+  it('é idempotente: reconsolidar a mesma sessão não duplica histórico', () => {
+    const once = consolidateFicha(emptyFicha(), [humorPatch], 'sess-1', HORA)
+    const twice = consolidateFicha(once, [humorPatch], 'sess-1', HORA)
+    expect(twice.historico.humor).toHaveLength(1)
+    expect(twice.changelog).toHaveLength(1)
+  })
+
+  it('preserva histórico de sessões anteriores ao consolidar nova sessão', () => {
+    const s1 = consolidateFicha(emptyFicha(), [humorPatch], 'sess-1', HORA)
+    const s2 = consolidateFicha(s1, [p({ id: 'h2', path: 'estado_mental.humor', depois: 'disfórico' })], 'sess-2', '2026-06-27T14:00:00.000Z')
+    expect(s2.historico.humor).toHaveLength(2)
+    expect(s2.changelog.map((c) => c.sessao_id)).toEqual(['sess-1', 'sess-2'])
   })
 })

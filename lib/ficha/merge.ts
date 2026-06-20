@@ -74,3 +74,37 @@ export function applyPatches(atualAnterior: FichaAtual, patches: FichaPatch[]): 
   }
   return atual
 }
+
+export function deriveHistorico(
+  historicoAtual: FichaHistorico, patches: FichaPatch[], sessaoId: string, dataHora: string,
+): FichaHistorico {
+  const next: FichaHistorico = structuredClone(historicoAtual)
+  for (const patch of patches) {
+    const trilha = PATH_TO_HISTORICO[patch.path]
+    if (!trilha) continue
+    const item: FichaHistoricoItem = {
+      data: dataHora, sessao_id: sessaoId, valor: patch.depois, acao: patch.tipo,
+    }
+    next[trilha] = [...(next[trilha] ?? []), item]
+  }
+  return next
+}
+
+export function consolidateFicha(
+  ficha: PacienteFicha, acceptedPatches: FichaPatch[], sessaoId: string, dataHora: string,
+): PacienteFicha {
+  // idempotência: remove qualquer resíduo desta sessão antes de reaplicar
+  const historicoLimpo: FichaHistorico = {}
+  for (const [trilha, itens] of Object.entries(ficha.historico)) {
+    const filtrado = (itens ?? []).filter((i) => i.sessao_id !== sessaoId)
+    if (filtrado.length) historicoLimpo[trilha] = filtrado
+  }
+  const changelogLimpo = ficha.changelog.filter((c) => c.sessao_id !== sessaoId)
+
+  return {
+    atual: applyPatches(ficha.atual, acceptedPatches),
+    historico: deriveHistorico(historicoLimpo, acceptedPatches, sessaoId, dataHora),
+    changelog: [...changelogLimpo, { sessao_id: sessaoId, data: dataHora, patches: acceptedPatches }],
+    consolidacao_pendente: ficha.consolidacao_pendente,
+  }
+}
