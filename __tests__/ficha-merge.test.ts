@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches, consolidateFicha, projectToLegacy, seedFichaFromLegacy } from '@/lib/ficha/merge'
-import type { FichaPatch } from '@/lib/types'
+import { emptyFicha, emptyFichaAtual, PATH_TO_HISTORICO, applyPatches, consolidateFicha, projectToLegacy, seedFichaFromLegacy, deterministicPatches } from '@/lib/ficha/merge'
+import type { FichaPatch, SessaoResumo } from '@/lib/types'
 
 describe('emptyFicha', () => {
   it('cria ficha vazia com defaults seguros de risco', () => {
@@ -108,5 +108,40 @@ describe('projeção e seed (round-trip sem regressão)', () => {
   it('seed com legado vazio retorna ficha vazia', () => {
     const ficha = seedFichaFromLegacy(null, null)
     expect(ficha).toEqual(emptyFicha())
+  })
+})
+
+const baseResumo = (): SessaoResumo => ({
+  resumo: { sintese: '', pontos_principais: [] },
+  pontos_atencao: { urgentes: [], monitorar: [], acompanhar_proximas: [] },
+  estrategia_plano: { tarefas_novas: [], metas_acordadas: null, foco_proxima_sessao: null },
+  evolucao_cfp: '',
+  queixas_sintomas: { queixa_sessao: null, sintomas_relatados: [], intensidade: null, frequencia: null, fatores_agravantes: [], fatores_alivio: [] },
+  estado_mental: { humor: null, afeto: null, pensamento_curso: null, pensamento_conteudo: null, insight: null, juizo_critica: null, risco_suicida: 'não avaliado', risco_heteroagressivo: 'não avaliado', outras_observacoes: null },
+  mudancas_padroes: { mudancas_positivas: [], padroes_identificados: [], crencas_centrais: [], defesas_predominantes: [], recursos_paciente: [], persistencias: [] },
+  progresso_tarefas: [], pessoas_centrais: [], pessoas_secundarias: [],
+  farmacologia: { medicacoes: null, adesao: null, efeitos_relatados: null, mudancas: null, encaminhamento_psiquiatrico: null },
+  intervencoes: { tecnicas_utilizadas: [], temas_trabalhados: [], observacoes_processo: null },
+  anamnese: { infancia: null, adolescencia: null, vida_adulta: null, familia_origem: null, relacionamentos: null, marcos_vida: null, historico_tratamentos: null },
+})
+
+describe('deterministicPatches (fallback)', () => {
+  it('emite patch de humor quando difere do atual', () => {
+    const atual = emptyFichaAtual()
+    const resumo = baseResumo(); resumo.estado_mental.humor = 'eutímico'
+    const patches = deterministicPatches(atual, resumo)
+    expect(patches.some((p) => p.path === 'estado_mental.humor' && p.depois === 'eutímico')).toBe(true)
+  })
+
+  it('não emite humor quando igual ao atual', () => {
+    const atual = emptyFichaAtual(); atual.estado_mental.humor = 'eutímico'
+    const resumo = baseResumo(); resumo.estado_mental.humor = 'eutímico'
+    expect(deterministicPatches(atual, resumo).some((p) => p.path === 'estado_mental.humor')).toBe(false)
+  })
+
+  it('emite patches de tarefas novas', () => {
+    const resumo = baseResumo(); resumo.estrategia_plano.tarefas_novas = ['registro de pensamentos']
+    const patches = deterministicPatches(emptyFichaAtual(), resumo)
+    expect(patches.some((p) => p.path === 'metas_plano.tarefas_andamento[]' && p.depois === 'registro de pensamentos')).toBe(true)
   })
 })

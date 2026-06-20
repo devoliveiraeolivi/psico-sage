@@ -1,6 +1,6 @@
 import type {
   PacienteFicha, FichaAtual, FichaHistorico, FichaHistoricoItem,
-  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico, HistoricoItem,
+  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico, HistoricoItem, SessaoResumo,
 } from '@/lib/types'
 
 export function emptyFichaAtual(): FichaAtual {
@@ -161,4 +161,26 @@ export function seedFichaFromLegacy(
     }
   }
   return ficha
+}
+
+function slug(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').slice(0, 40)
+}
+
+export function deterministicPatches(atual: FichaAtual, resumo: SessaoResumo): FichaPatch[] {
+  const patches: FichaPatch[] = []
+  const push = (path: string, depois: string, antes: string | null, tipo: FichaPatch['tipo'] = 'atualizado', risco = false) =>
+    patches.push({ id: `${path}#${slug(depois)}`, path, tipo, antes, depois, motivo: 'Consolidação automática (fallback).', risco })
+
+  const humor = resumo.estado_mental?.humor
+  if (humor && humor !== atual.estado_mental.humor) push('estado_mental.humor', humor, atual.estado_mental.humor)
+
+  for (const t of resumo.estrategia_plano?.tarefas_novas ?? [])
+    if (!atual.metas_plano.tarefas_andamento.includes(t)) push('metas_plano.tarefas_andamento[]', t, null, 'adicionado')
+
+  const alertas = [...(resumo.pontos_atencao?.urgentes ?? []), ...(resumo.pontos_atencao?.monitorar ?? [])]
+  for (const a of alertas)
+    if (!atual.alertas_ativos.includes(a)) push('alertas_ativos[]', a, null, 'adicionado', true)
+
+  return patches
 }
