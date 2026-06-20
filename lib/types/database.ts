@@ -400,6 +400,112 @@ export interface PacienteHistorico {
 }
 
 // ============================================
+// FICHA v2 (pacientes.ficha) — fonte de verdade
+// atual = estado vivo (revisável) · historico = append-only · changelog = por sessão
+// ============================================
+
+export type FichaPatchTipo = 'adicionado' | 'atualizado' | 'resolvido' | 'concluida'
+
+export interface FichaPatch {
+  id: string              // estável p/ aceitar/rejeitar — `${path}#${slug(depois)}`
+  path: string            // ex: 'estado_mental.humor' | 'padroes_dinamicas.crencas_nucleares[]'
+  tipo: FichaPatchTipo
+  antes: string | null    // valor anterior (null se path novo) — exibido no diff
+  depois: string          // valor novo a aplicar
+  motivo: string          // justificativa clínica (lida no diff)
+  risco?: boolean         // destaque visual p/ itens de risco
+}
+
+export interface FichaHistoricoItem {
+  data: string            // data_hora da sessão (ISO)
+  sessao_id: string
+  valor: string
+  acao: FichaPatchTipo
+}
+
+export interface PessoaChave {
+  nome: string
+  categoria: PessoaCategoria
+  tipo: string
+  dinamica: string        // papel/dinâmica + intervenção acumulada
+}
+
+export interface FichaAtual {
+  sintese_clinica: string | null
+  estado_mental: {
+    humor: string | null
+    afeto: string | null
+    insight: string | null
+    juizo_critica: string | null
+    risco_suicida: string
+    risco_heteroagressivo: string
+    ultima_avaliacao: string | null
+  }
+  queixas_ativas: {
+    queixa: string | null
+    sintomas: string[]
+    intensidade: number | null
+    frequencia: string | null
+  }
+  padroes_dinamicas: {
+    padroes: string[]
+    crencas_nucleares: string[]
+    defesas: string[]
+    recursos: string[]
+    persistencias: string[]
+  }
+  pessoas_chave: PessoaChave[]
+  farmacologia: {
+    medicacoes: Medicacao[]
+    adesao: string | null
+    encaminhamento: string | null
+  }
+  metas_plano: {
+    metas_ativas: string[]
+    tarefas_andamento: string[]
+    foco_proxima_sessao: string | null
+  }
+  anamnese: {
+    infancia: string | null
+    adolescencia: string | null
+    vida_adulta: string | null
+    familia_origem: string | null
+    relacionamentos: string | null
+    marcos_vida: string | null
+    historico_tratamentos: string | null
+  }
+  alertas_ativos: string[]
+}
+
+export interface FichaHistorico {
+  humor?: FichaHistoricoItem[]
+  risco_suicida?: FichaHistoricoItem[]
+  medicamentos?: FichaHistoricoItem[]
+  diagnosticos?: FichaHistoricoItem[]
+  crencas?: FichaHistoricoItem[]
+  metas?: FichaHistoricoItem[]
+  tarefas?: FichaHistoricoItem[]
+  insights?: FichaHistoricoItem[]
+  marcos?: FichaHistoricoItem[]
+  alertas?: FichaHistoricoItem[]
+  pessoas?: FichaHistoricoItem[]
+  [key: string]: FichaHistoricoItem[] | undefined
+}
+
+export interface FichaChangelogEntry {
+  sessao_id: string
+  data: string
+  patches: FichaPatch[]   // patches efetivamente aceitos nesta sessão
+}
+
+export interface PacienteFicha {
+  atual: FichaAtual
+  historico: FichaHistorico
+  changelog: FichaChangelogEntry[]
+  consolidacao_pendente?: boolean   // true quando caiu no fallback determinístico
+}
+
+// ============================================
 // TIPOS DOS JSONB (sessoes)
 // ============================================
 
