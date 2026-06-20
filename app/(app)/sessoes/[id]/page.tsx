@@ -169,6 +169,7 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
             hasAudio={!!sessao.audio_url}
             dataHora={sessao.data_hora}
             recordingStatus={sessao.recording_status ?? null}
+            recomendacoes={sessao.recomendacoes ?? null}
           />
         </div>
         <div>
