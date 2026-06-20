@@ -144,4 +144,13 @@ describe('deterministicPatches (fallback)', () => {
     const patches = deterministicPatches(emptyFichaAtual(), resumo)
     expect(patches.some((p) => p.path === 'metas_plano.tarefas_andamento[]' && p.depois === 'registro de pensamentos')).toBe(true)
   })
+
+  it('emite patches de alertas (urgentes e monitorar)', () => {
+    const resumo = baseResumo()
+    resumo.pontos_atencao.urgentes = ['risco de autoagressão']
+    resumo.pontos_atencao.monitorar = ['isolamento social']
+    const patches = deterministicPatches(emptyFichaAtual(), resumo)
+    expect(patches.some((p) => p.path === 'alertas_ativos[]' && p.depois === 'risco de autoagressão' && p.risco === true)).toBe(true)
+    expect(patches.some((p) => p.path === 'alertas_ativos[]' && p.depois === 'isolamento social' && p.risco === true)).toBe(true)
+  })
 })
