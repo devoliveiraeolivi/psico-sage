@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
-import { createClient } from '@/lib/supabase/server'
 import { generateRecomendacoes } from '@/lib/ai/gerar-recomendacoes'
 import { decryptJsonField, encryptJsonField } from '@/lib/supabase/encrypt'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
@@ -66,10 +65,15 @@ export async function POST(
     logger.info('Recomendacoes starting', { sessaoId: id })
     const recomendacoes = await generateRecomendacoes(resumo, pacienteResumo)
 
-    await db
+    const { error: updateError } = await db
       .from('sessoes')
       .update({ recomendacoes: encryptJsonField(recomendacoes) })
       .eq('id', id)
+
+    if (updateError) {
+      logger.error('Recomendacoes save failed', { sessaoId: id, error: updateError.message })
+      return NextResponse.json({ error: 'Erro ao salvar recomendações' }, { status: 500 })
+    }
 
     logger.info('Recomendacoes complete', { sessaoId: id })
     return NextResponse.json({ ok: true })
