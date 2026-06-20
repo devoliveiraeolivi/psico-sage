@@ -133,6 +133,10 @@ export function ApprovalModal({
   const arrFromCommas = (text: string) => text.split(',').map(t => t.trim()).filter(Boolean)
 
   const handleGerarPreview = async () => {
+    if (patches !== null) {
+      setMode('diff')
+      return
+    }
     setLoadingPreview(true)
     setApproveError(null)
     try {
@@ -729,7 +733,7 @@ export function ApprovalModal({
           {mode === 'diff' ? (
             <>
               <button
-                onClick={() => { setMode('review'); setPatches(null); setAceitos({}); setApproveError(null) }}
+                onClick={() => { setMode('review'); setApproveError(null) }}
                 disabled={isApproving}
                 className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
               >

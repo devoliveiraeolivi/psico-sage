@@ -109,6 +109,27 @@ describe('projeção e seed (round-trip sem regressão)', () => {
     const ficha = seedFichaFromLegacy(null, null)
     expect(ficha).toEqual(emptyFicha())
   })
+
+  it('seed preserva tarefas, alertas e pessoas_chave no round-trip com projectToLegacy', () => {
+    const ficha = seedFichaFromLegacy(
+      {
+        sintese: 'Quadro ansioso.',
+        tarefas: 'tarefa A; tarefa B',
+        alertas: 'alerta X',
+        pessoas_chave: [{ nome: 'Mãe', tipo: 'mae', categoria: 'familia_origem' }],
+      },
+      {},
+    )
+    // Verifica seed
+    expect(ficha.atual.metas_plano.tarefas_andamento).toEqual(['tarefa A', 'tarefa B'])
+    expect(ficha.atual.alertas_ativos).toEqual(['alerta X'])
+    expect(ficha.atual.pessoas_chave).toEqual([{ nome: 'Mãe', categoria: 'familia_origem', tipo: 'mae', dinamica: '' }])
+    // Round-trip: projectToLegacy deve reemitir os mesmos valores
+    const legacy = projectToLegacy(ficha)
+    expect(legacy.resumo.tarefas).toBe('tarefa A; tarefa B')
+    expect(legacy.resumo.alertas).toBe('alerta X')
+    expect(legacy.resumo.pessoas_chave).toEqual([{ nome: 'Mãe', tipo: 'mae', categoria: 'familia_origem' }])
+  })
 })
 
 const baseResumo = (): SessaoResumo => ({

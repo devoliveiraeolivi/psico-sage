@@ -1,6 +1,6 @@
 import type {
   PacienteFicha, FichaAtual, FichaHistorico, FichaHistoricoItem,
-  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico, HistoricoItem, SessaoResumo,
+  FichaPatch, FichaChangelogEntry, PacienteResumo, PacienteHistorico, HistoricoItem, SessaoResumo, PessoaCategoria,
 } from '@/lib/types'
 
 export function emptyFichaAtual(): FichaAtual {
@@ -152,6 +152,14 @@ export function seedFichaFromLegacy(
     }
     ficha.atual.padroes_dinamicas.crencas_nucleares = resumo.crencas_nucleares ?? []
     ficha.atual.padroes_dinamicas.recursos = resumo.recursos_paciente ?? []
+    ficha.atual.metas_plano.tarefas_andamento = resumo.tarefas ? resumo.tarefas.split('; ').filter(Boolean) : []
+    ficha.atual.alertas_ativos = resumo.alertas ? resumo.alertas.split('; ').filter(Boolean) : []
+    ficha.atual.pessoas_chave = (resumo.pessoas_chave ?? []).map((p) => ({
+      nome: p.nome,
+      categoria: (p.categoria as PessoaCategoria) ?? 'outros',
+      tipo: p.tipo,
+      dinamica: '',
+    }))
   }
   if (historico) {
     for (const [trilha, itens] of Object.entries(historico)) {

@@ -26,4 +26,12 @@ describe('validatePatches', () => {
     expect(validatePatches(null)).toEqual([])
     expect(validatePatches({ foo: 1 })).toEqual([])
   })
+
+  it('rejeita patches de paths de listas de objetos (pessoas_chave[] e farmacologia.medicacoes[])', () => {
+    const out = validatePatches({ patches: [
+      { path: 'pessoas_chave[]', tipo: 'adicionado', depois: 'Mãe', motivo: 'x' },
+      { path: 'farmacologia.medicacoes[]', tipo: 'adicionado', depois: 'Sertralina', motivo: 'y' },
+    ] })
+    expect(out).toEqual([])
+  })
 })

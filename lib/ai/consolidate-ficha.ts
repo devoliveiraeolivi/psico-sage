@@ -17,7 +17,11 @@ const SCALAR_PATHS = [
   'anamnese.infancia', 'anamnese.adolescencia', 'anamnese.vida_adulta', 'anamnese.familia_origem',
   'anamnese.relacionamentos', 'anamnese.marcos_vida', 'anamnese.historico_tratamentos',
 ] as const
-const VALID_PATHS = new Set<string>([...SCALAR_PATHS, ...Object.keys(PATH_TO_HISTORICO)])
+const OBJECT_LIST_PATHS = new Set(['pessoas_chave[]', 'farmacologia.medicacoes[]'])
+const VALID_PATHS = new Set<string>([
+  ...SCALAR_PATHS,
+  ...Object.keys(PATH_TO_HISTORICO).filter((k) => !OBJECT_LIST_PATHS.has(k)),
+])
 const VALID_TIPOS = new Set(['adicionado', 'atualizado', 'resolvido', 'concluida'])
 
 function slug(s: string): string {
@@ -58,7 +62,7 @@ Você é um documentador clínico em psicologia. Recebe a FICHA ATUAL consolidad
 
 # PATHS PERMITIDOS
 Escalares (substituem valor): sintese_clinica, estado_mental.humor, estado_mental.afeto, estado_mental.insight, estado_mental.juizo_critica, estado_mental.risco_suicida, estado_mental.risco_heteroagressivo, queixas_ativas.queixa, queixas_ativas.frequencia, farmacologia.adesao, farmacologia.encaminhamento, metas_plano.foco_proxima_sessao, anamnese.* .
-Listas (path termina em []): queixas_ativas.sintomas[], padroes_dinamicas.padroes[], padroes_dinamicas.crencas_nucleares[], padroes_dinamicas.recursos[], pessoas_chave[], farmacologia.medicacoes[], metas_plano.metas_ativas[], metas_plano.tarefas_andamento[], alertas_ativos[]. Use tipo 'concluida'/'resolvido' (com 'antes'=item exato) para remover de uma lista.
+Listas (path termina em []): queixas_ativas.sintomas[], padroes_dinamicas.padroes[], padroes_dinamicas.crencas_nucleares[], padroes_dinamicas.recursos[], metas_plano.metas_ativas[], metas_plano.tarefas_andamento[], alertas_ativos[]. Use tipo 'concluida'/'resolvido' (com 'antes'=item exato) para remover de uma lista.
 
 # FORMATO
 Responda APENAS JSON válido, sem markdown:
