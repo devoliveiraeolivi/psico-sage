@@ -96,29 +96,54 @@ na montagem).
 
 Entrada: `ficha.atual` existente + `SessaoResumo` aprovada.
 
-Saída (JSON):
-- `atual_novo`: o bloco `atual` reescrito/mesclado seção por seção.
-- `changelog`: lista explícita de cada mudança —
-  `{ secao, tipo: adicionado|atualizado|resolvido|concluida, antes, depois, motivo }`.
+Saída (JSON): apenas o **`changelog`** — uma lista de *patches aplicáveis por
+código*. Cada item:
 
-O LLM **não toca no `historico`** e **não recopia o histórico inteiro** — só
-raciocina sobre o presente. Prompt enxuto, barato, focado em julgamento clínico.
+```
+{
+  path,              // ex: "estado_mental.humor", "padroes_dinamicas.crencas_nucleares[]"
+  tipo,              // adicionado | atualizado | resolvido | concluida
+  antes,             // valor anterior (null se path novo) — para o diff
+  depois,            // valor novo a aplicar
+  motivo             // justificativa clínica (lida pelo psicólogo no diff)
+}
+```
 
-### Etapa 2 — Código deriva o `historico` a partir do changelog (determinístico)
+**Decisão importante (corrige furo do review):** o LLM **não** devolve um
+`atual_novo` mesclado inteiro. Devolve só o changelog/patches. A `atual` final é
+derivada por código como **`atual_anterior` + (somente os patches aceitos pelo
+psicólogo)**. Isso torna a rejeição por item determinística — não há blob mesclado
+do qual "des-aplicar" mudanças. Para seções de lista (`path` terminado em `[]`),
+o patch indica adicionar/atualizar/remover um item identificável.
 
-Para cada item do `changelog`, o código cria a entrada append-only
-correspondente (ex.: humor `ansioso → eutímico` →
-`historico.humor.push({ data, sessao_id, valor: "eutímico", acao: "atualizado" })`;
-meta concluída → `historico.metas.push({ ..., acao: "concluida" })`). O "nunca
-perder" é garantido **aqui**, por código testável — o LLM não tem poder de apagar
-histórico.
+O LLM **não toca no `historico`** e **não recopia nada** — só raciocina sobre o
+presente e emite as diferenças. Prompt enxuto, barato, focado em julgamento
+clínico.
+
+### Etapa 2 — Código aplica patches e deriva o `historico` (determinístico)
+
+Para cada patch **aceito**, o código:
+1. Aplica o `depois` no `path` correspondente da `atual` (partindo de
+   `atual_anterior`).
+2. Cria a entrada append-only no `historico` (ex.: humor `ansioso → eutímico` →
+   `historico.humor.push({ data, sessao_id, valor: "eutímico", acao: "atualizado" })`;
+   meta concluída → `historico.metas.push({ ..., acao: "concluida" })`).
+
+O `data` de cada item de histórico usa o **`data_hora` da sessão** (não o
+timestamp de aprovação), para ordenação longitudinal correta. O "nunca perder" é
+garantido **aqui**, por código testável — o LLM não tem poder de apagar histórico.
+
+**Idempotência (corrige furo do review):** os appends e o bloco de `changelog`
+são chaveados por `sessao_id`. Re-consolidar a mesma sessão (re-aprovação,
+`ai-adjust`) **substitui** o bloco daquela sessão em vez de acumular — sem
+duplicar entradas no histórico.
 
 ### Etapa 3 — Validação + montagem da ficha proposta
 
-O código valida o shape do `atual_novo` (defaults seguros, igual o
-`extractResumo`), monta a `ficha` proposta completa (`atual_novo` + `historico`
-derivado + changelog da sessão) e devolve **sem persistir** (persistência só após
-confirmação humana — Seção 3).
+O código valida o shape de cada patch (path válido, defaults seguros), monta a
+`ficha` proposta (`atual` derivada + `historico` derivado + `changelog` da
+sessão) e devolve **sem persistir** (persistência só após confirmação humana —
+Seção 3).
 
 ### Princípios do prompt da IA #2
 
@@ -141,7 +166,8 @@ duas fases para encaixar a revisão humana. A ação "Aprovar" da sessão vira
 
 ### Fase 1 — Preview (gera, não grava)
 
-Novo endpoint `POST /api/sessoes/[id]/consolidar-preview`:
+Novo endpoint `POST /api/sessoes/[id]/consolidar-preview` (com `requireAuth` +
+`requireSessionOwner` + rate-limit, espelhando `extract`):
 
 1. Carrega `ficha.atual` do paciente + `SessaoResumo` da sessão (descriptografados).
 2. Roda o motor da Seção 2 → ficha proposta + `changelog`.
@@ -160,20 +186,26 @@ pode desmarcar o que não concorda.
 
 ### Fase 2 — Commit (grava só o aceito)
 
-O `approve` existente passa a receber a `ficha` final (já filtrada pelos
-checkboxes) no body:
+O `approve` existente passa a receber, no body, a lista de **patches aceitos**
+(os ids/paths que o psicólogo manteve marcados):
 
-1. Recalcula o `historico` só com as mudanças **aceitas** (rejeitadas não descem
-   para o histórico nem alteram o `atual`).
+1. Aplica somente os patches aceitos sobre `atual_anterior` e deriva o
+   `historico` correspondente (Etapa 2 do motor). Patches rejeitados não alteram
+   o `atual` nem descem para o histórico.
 2. Persiste via `approve_session_atomic`, que ganha `p_paciente_ficha JSONB`
-   (mantém `p_paciente_resumo`/`p_paciente_historico` derivados via projeção).
+   (mantém `p_paciente_resumo`/`p_paciente_historico` derivados via projeção, na
+   mesma transação atômica).
 3. Segue igual: sessão → `realizada`, auto-cria próxima sessão.
 
 ### Fallback
 
-Se a IA #2 falhar (timeout/erro), a aprovação **não trava**: cai no merge
-determinístico atual e marca a ficha como "consolidação automática pendente".
-Resiliência consistente com o resto do sistema.
+Se a IA #2 falhar (timeout/erro), a aprovação **não trava**. Em vez de bifurcar a
+fonte de verdade escrevendo nos campos legados, o fallback constrói um
+**changelog derivado por código** (regras simples herdadas do merge atual: humor
+mudou, tarefas novas, alertas) e o passa pelo *mesmo* `merge.ts` — pulando apenas
+o LLM, não a `ficha`. A sessão é marcada como "consolidação automática pendente"
+para eventual re-consolidação assistida por IA. A `ficha` permanece a única fonte
+de verdade.
 
 ### Pontos de mudança no código
 
@@ -192,12 +224,18 @@ Resiliência consistente com o resto do sistema.
 ### Migração (`019_paciente_ficha.sql`)
 
 - Adiciona `ficha JSONB DEFAULT '{}'::jsonb` em `pacientes` (criptografada at
-  rest, entra em `decryptPaciente`).
+  rest — adicionar a `decryptPaciente` em `lib/supabase/encrypt.ts` e
+  criptografar em toda escrita).
 - Atualiza `approve_session_atomic` para receber `p_paciente_ficha` (além dos
   `p_paciente_resumo`/`p_paciente_historico` legados, derivados por projeção).
-- **Backfill:** passada que monta `ficha.atual`/`ficha.historico` a partir do
-  `resumo`/`historico` existentes. Pacientes sem dado começam com `ficha` vazia;
-  a primeira consolidação preenche.
+- **Backfill (corrige furo do review):** o backfill **tem que semear**
+  `ficha.atual`/`ficha.historico` a partir do `resumo`/`historico` legados
+  existentes de cada paciente. Sem isso, a primeira consolidação projetaria uma
+  ficha quase-vazia de volta para os campos legados e **apagaria a tela atual**
+  de pacientes existentes. Como reestruturar JSON aninhado é difícil em SQL puro,
+  o backfill é um **script TS one-off** (`scripts/`), não a migração SQL.
+  Pacientes sem dado legado começam com `ficha` vazia; a primeira consolidação
+  preenche.
 
 ### Compatibilidade (sem big-bang)
 
@@ -218,6 +256,17 @@ paciente e tabs continuam funcionando; a UI rica migra depois em PR separado.
   segue intacta.
 - **Fixtures:** ficha pré-existente + `SessaoResumo` nova, verificando merge de
   humor, conclusão de meta e adição de pessoa.
+- **Idempotência:** consolidar a mesma `sessao_id` duas vezes não duplica
+  entradas no histórico (substitui o bloco da sessão).
+- **Regressão de backfill:** paciente legado com `resumo`/`historico` populados →
+  após semear `ficha` e projetar de volta, os campos legados permanecem
+  equivalentes (sem apagar dados de tela).
+
+## Pendência para o plano de implementação
+
+- **Tabela de mapeamento `SessaoResumo → seção da ficha`** (qual campo da sessão
+  alimenta qual `path` do bloco `atual`/`historico`) é um entregável do plano —
+  precisa ser explícita para o prompt da IA #2 e para o `merge.ts`.
 
 ## Fora de escopo (YAGNI)
 
