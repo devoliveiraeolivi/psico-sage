@@ -14,8 +14,16 @@ import { promisify } from 'util'
 import { writeFile, readFile, rm, mkdtemp } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
+import ffmpegStatic from 'ffmpeg-static'
+import { path as ffprobeStaticPath } from 'ffprobe-static'
 
 const execFileAsync = promisify(execFile)
+
+// Binários empacotados (ffmpeg-static / ffprobe-static) — necessários no
+// runtime serverless do Vercel, que não tem ffmpeg instalado. Em ambientes
+// com ffmpeg no PATH, caem no binário do sistema como fallback.
+const FFMPEG_BIN = (ffmpegStatic as unknown as string) || 'ffmpeg'
+const FFPROBE_BIN = ffprobeStaticPath || 'ffprobe'
 
 const GROQ_TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 /** Limite do Groq é 25MB — 24.9 evita split desnecessário em sessões de ~50min */
@@ -44,7 +52,7 @@ export interface TranscriptionResult {
 
 async function isFfmpegAvailable(): Promise<boolean> {
   try {
-    await execFileAsync('ffprobe', ['-version'], { timeout: 5_000 })
+    await execFileAsync(FFPROBE_BIN, ['-version'], { timeout: 5_000 })
     return true
   } catch {
     return false
@@ -52,7 +60,7 @@ async function isFfmpegAvailable(): Promise<boolean> {
 }
 
 async function probeDuration(filePath: string): Promise<number> {
-  const { stdout } = await execFileAsync('ffprobe', [
+  const { stdout } = await execFileAsync(FFPROBE_BIN, [
     '-v', 'error',
     '-show_entries', 'format=duration',
     '-of', 'default=noprint_wrappers=1:nokey=1',
@@ -91,7 +99,7 @@ async function splitAudio(
     })
 
     const outputPattern = path.join(tmpDir, `chunk_%03d.${ext}`)
-    await execFileAsync('ffmpeg', [
+    await execFileAsync(FFMPEG_BIN, [
       '-i', inputPath,
       '-f', 'segment',
       '-segment_time', String(segmentSeconds),

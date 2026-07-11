@@ -483,7 +483,7 @@ export function ResumoTab({ resumo, jaRealizada, sessaoId, hasAudio, dataHora, r
         toast(data.error || 'Erro ao reprocessar. Tente novamente.')
         setReprocessing(false)
       } else {
-        // Extração disparada em background — recarregar para mostrar progresso no SessionRecorder
+        // Extração concluída (síncrona) — recarregar para mostrar o novo prontuário
         router.refresh()
       }
     } catch {

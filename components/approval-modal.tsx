@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { formatDateTime } from '@/lib/utils'
 import { useToast } from './toast'
 import { ProntuarioView } from './prontuario-view'
-import type { SessaoResumo, PessoaCentral, PessoaSecundaria, ProgressoMeta } from '@/lib/types'
+import type { SessaoResumo, PessoaCentral, PessoaSecundaria, ProgressoMeta, FichaPatch } from '@/lib/types'
 
 interface ApprovalModalProps {
   open: boolean
@@ -74,7 +74,7 @@ export function ApprovalModal({
 }: ApprovalModalProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const [mode, setMode] = useState<'review' | 'edit'>('review')
+  const [mode, setMode] = useState<'review' | 'edit' | 'diff'>('review')
   const [isApproving, setIsApproving] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editedResumo, setEditedResumo] = useState<SessaoResumo>(resumo ? cloneResumo(resumo) : emptyResumo())
@@ -85,6 +85,9 @@ export function ApprovalModal({
   const [adjustError, setAdjustError] = useState<string | null>(null)
   const [adjustResult, setAdjustResult] = useState<string | null>(null)
   const [approveError, setApproveError] = useState<string | null>(null)
+  const [patches, setPatches] = useState<FichaPatch[] | null>(null)
+  const [aceitos, setAceitos] = useState<Record<string, boolean>>({})
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -96,6 +99,9 @@ export function ApprovalModal({
       setAdjustError(null)
       setAdjustResult(null)
       setApproveError(null)
+      setPatches(null)
+      setAceitos({})
+      setLoadingPreview(false)
     }
   }, [open, resumo])
 
@@ -126,11 +132,42 @@ export function ApprovalModal({
   const arrFromLines = (text: string) => text.split('\n').filter(Boolean)
   const arrFromCommas = (text: string) => text.split(',').map(t => t.trim()).filter(Boolean)
 
-  const handleApprove = async () => {
+  const handleGerarPreview = async () => {
+    if (patches !== null) {
+      setMode('diff')
+      return
+    }
+    setLoadingPreview(true)
+    setApproveError(null)
+    try {
+      const res = await fetch(`/api/sessoes/${sessaoId}/consolidar-preview`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
+        setApproveError(data.error || 'Falha ao gerar preview da ficha')
+        return
+      }
+      const json = await res.json()
+      const ps: FichaPatch[] = json.changelog ?? []
+      setPatches(ps)
+      setAceitos(Object.fromEntries(ps.map((p) => [p.id, true])))
+      setMode('diff')
+    } catch {
+      setApproveError('Erro de conexão. Tente novamente.')
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  const handleConfirmarAprovacao = async () => {
     setIsApproving(true)
     setApproveError(null)
     try {
-      const res = await fetch(`/api/sessoes/${sessaoId}/approve`, { method: 'POST' })
+      const acceptedPatches = (patches ?? []).filter((p) => aceitos[p.id])
+      const res = await fetch(`/api/sessoes/${sessaoId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acceptedPatches, reviewed: true }),
+      })
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
         setApproveError(data.error || 'Falha ao aprovar sessão')
@@ -141,7 +178,7 @@ export function ApprovalModal({
       fetch(`/api/sessoes/${sessaoId}/recomendacoes`, { method: 'POST' }).catch(() => {})
       onClose()
       router.refresh()
-    } catch (err) {
+    } catch {
       setApproveError('Erro de conexão. Tente novamente.')
     } finally {
       setIsApproving(false)
@@ -162,6 +199,10 @@ export function ApprovalModal({
       }
       setDisplayedResumo(editedResumo)
       setMode('review')
+      // Invalidate cached preview so next "Aprovar e atualizar ficha" fetches a fresh
+      // /consolidar-preview against the updated resumo (not stale patches from pre-edit resumo).
+      setPatches(null)
+      setAceitos({})
       router.refresh()
     } catch {
       toast('Erro ao salvar edição. Tente novamente.', 'error')
@@ -192,6 +233,10 @@ export function ApprovalModal({
       setAiInstrucoes('')
       setShowAiAdjust(false)
       setAdjustResult(data.descricao_ajustes || 'Ajuste realizado.')
+      // Invalidate cached preview so the next "Aprovar e atualizar ficha" refetches
+      // /consolidar-preview against the AI-adjusted resumo (not stale pre-adjust patches).
+      setPatches(null)
+      setAceitos({})
     } catch {
       setAdjustError('Erro de conexão. Tente novamente.')
     } finally {
@@ -276,7 +321,7 @@ export function ApprovalModal({
             </div>
             <div className="min-w-0">
               <h2 className="text-lg font-semibold truncate">
-                {mode === 'edit' ? 'Editar Prontuário' : 'Revisar Prontuário'}
+                {mode === 'edit' ? 'Editar Prontuário' : mode === 'diff' ? 'Atualizar Ficha do Paciente' : 'Revisar Prontuário'}
               </h2>
               <p className="text-sm text-gray-500 truncate">
                 {pacienteNome}
@@ -294,7 +339,62 @@ export function ApprovalModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
-          {mode === 'review' ? (
+          {mode === 'diff' ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Revise as alterações propostas para a ficha do paciente. Desmarque itens que não deseja aplicar.
+              </p>
+              {patches && patches.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-8">Nenhuma alteração identificada para a ficha.</p>
+              )}
+              {patches && patches.length > 0 && (() => {
+                const secoes = Array.from(new Set(patches.map((p) => p.path.split('.')[0].replace(/\[\]$/, ''))))
+                return secoes.map((secao) => {
+                  const itens = patches.filter((p) => p.path.split('.')[0].replace(/\[\]$/, '') === secao)
+                  return (
+                    <div key={secao} className={sectionCls}>
+                      <div className="px-4 py-3 border-b border-gray-100">
+                        <span className="text-sm font-semibold text-gray-700 capitalize">{secao.replace(/_/g, ' ')}</span>
+                      </div>
+                      <div className="px-4 py-3 space-y-2">
+                        {itens.map((p) => (
+                          <label
+                            key={p.id}
+                            className={`flex gap-3 p-3 rounded-lg cursor-pointer transition-colors ${p.risco ? 'border border-red-300 bg-red-50 hover:bg-red-100' : 'border border-gray-100 bg-gray-50 hover:bg-gray-100'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!aceitos[p.id]}
+                              onChange={(e) => setAceitos((s) => ({ ...s, [p.id]: e.target.checked }))}
+                              className="mt-0.5 h-4 w-4 flex-shrink-0 accent-emerald-600"
+                            />
+                            <span className="flex-1 min-w-0">
+                              <span className="flex items-center gap-2 flex-wrap">
+                                <strong className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{p.path}</strong>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.tipo === 'adicionado' ? 'bg-emerald-100 text-emerald-700' : p.tipo === 'resolvido' ? 'bg-gray-200 text-gray-600' : 'bg-amber-100 text-amber-700'}`}>
+                                  {p.tipo}
+                                </span>
+                                {p.risco && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-100 text-red-700 border border-red-200">
+                                    risco
+                                  </span>
+                                )}
+                              </span>
+                              {p.antes != null && (
+                                <span className="block text-xs text-gray-500 mt-1 line-through">{p.antes}</span>
+                              )}
+                              <span className="block text-sm text-gray-800 mt-0.5">{p.depois}</span>
+                              <em className="block text-xs text-gray-400 mt-1 not-italic">{p.motivo}</em>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+          ) : mode === 'review' ? (
             displayedResumo ? <ProntuarioView dados={displayedResumo} /> : <p className="text-sm text-gray-400 text-center py-8">Sem dados para exibir</p>
           ) : (
             <div className="space-y-3">
@@ -635,13 +735,47 @@ export function ApprovalModal({
         )}
 
         {/* Footer */}
-        {approveError && mode === 'review' && (
+        {approveError && (mode === 'review' || mode === 'diff') && (
           <div className="px-6 py-2 border-t border-red-100 bg-red-50 flex-shrink-0">
             <p className="text-sm text-red-700">{approveError}</p>
           </div>
         )}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
-          {mode === 'review' ? (
+          {mode === 'diff' ? (
+            <>
+              <button
+                onClick={() => { setMode('review'); setApproveError(null) }}
+                disabled={isApproving}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+              >
+                Voltar
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  {Object.values(aceitos).filter(Boolean).length} de {patches?.length ?? 0} alterações selecionadas
+                </span>
+                <button
+                  onClick={handleConfirmarAprovacao}
+                  disabled={isApproving}
+                  className="px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    {isApproving ? (
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )}
+                    {isApproving ? 'Aprovando...' : 'Confirmar aprovação'}
+                  </span>
+                </button>
+              </div>
+            </>
+          ) : mode === 'review' ? (
             <>
               <button onClick={onClose} disabled={isAdjusting} className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50">Fechar</button>
               <div className="flex items-center gap-2">
@@ -673,12 +807,12 @@ export function ApprovalModal({
                   </span>
                 </button>
                 <button
-                  onClick={handleApprove}
-                  disabled={isApproving || isAdjusting}
+                  onClick={handleGerarPreview}
+                  disabled={loadingPreview || isAdjusting}
                   className="px-5 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors"
                 >
                   <span className="flex items-center gap-2">
-                    {isApproving ? (
+                    {loadingPreview ? (
                       <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -688,7 +822,7 @@ export function ApprovalModal({
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     )}
-                    {isApproving ? 'Aprovando...' : 'Aprovar'}
+                    {loadingPreview ? 'Gerando preview...' : 'Aprovar e atualizar ficha'}
                   </span>
                 </button>
               </div>

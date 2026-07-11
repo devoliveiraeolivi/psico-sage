@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import type { SessaoResumo, PacienteResumo, PacienteHistorico, HistoricoItem } from '@/lib/types'
+import type { SessaoResumo, FichaPatch, PacienteFicha, PacienteResumo } from '@/lib/types'
 import { calcularProximaSessao } from '@/lib/next-session'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
 import { decryptJsonField, encryptJsonField } from '@/lib/supabase/encrypt'
 import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
+import { consolidateFicha, deterministicPatches, projectToLegacy, emptyFicha } from '@/lib/ficha/merge'
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +24,7 @@ export async function POST(
     // Buscar sessão com dados do paciente
     const { data: sessao, error: fetchError } = await db
       .from('sessoes')
-      .select('*, pacientes(id, status, resumo, historico, frequencia_sessoes, dia_semana_preferido, hora_preferida, duracao_padrao)')
+      .select('*, pacientes(id, status, resumo, historico, ficha, frequencia_sessoes, dia_semana_preferido, hora_preferida, duracao_padrao)')
       .eq('id', id)
       .single()
 
@@ -44,61 +45,30 @@ export async function POST(
       return NextResponse.json({ error: 'Resumo ou paciente não encontrado' }, { status: 400 })
     }
 
-    // Decrypt patient data (may be encrypted)
+    // Read accepted patches and reviewed flag from request body (may be absent for fallback path)
+    const body = await request.json().catch(() => ({}))
+    let acceptedPatches: FichaPatch[] = Array.isArray(body?.acceptedPatches) ? body.acceptedPatches : []
+    // reviewed=true means the therapist went through the diff UI; even an empty selection is intentional
+    const reviewed = body?.reviewed === true
+
+    // Decrypt patient ficha; fall back to empty structure if absent
+    const fichaDecrypted = decryptJsonField<PacienteFicha>(paciente.ficha)
+    const fichaBase = fichaDecrypted?.atual ? fichaDecrypted : emptyFicha()
+
+    // Fallback: no patches supplied AND not reviewed (IA #2 unavailable or direct approve) → deterministic rules
+    // When reviewed=true, the therapist consciously rejected all patches → honour the empty list as-is
+    let pendente = false
+    if (!reviewed && acceptedPatches.length === 0) {
+      acceptedPatches = deterministicPatches(fichaBase.atual, resumo)
+      pendente = true
+    }
+
+    // Decrypt the patient's existing legacy resumo so unmodeled fields are preserved
     const pacienteResumoDecrypted = decryptJsonField<PacienteResumo>(paciente.resumo)
-    const pacienteHistoricoDecrypted = decryptJsonField<PacienteHistorico>(paciente.historico)
 
-    // Build updated patient data (complex JSONB manipulation stays in TypeScript)
-    const allAlertas = [
-      ...(resumo.pontos_atencao?.urgentes || []),
-      ...(resumo.pontos_atencao?.monitorar || []),
-    ]
-    const novoResumo: PacienteResumo = {
-      ...(pacienteResumoDecrypted || {}),
-      sintese: resumo.resumo?.sintese || undefined,
-      humor: resumo.estado_mental?.humor || undefined,
-      tarefas: resumo.estrategia_plano?.tarefas_novas?.join('; ') || undefined,
-      alertas: allAlertas.length > 0 ? allAlertas.join('; ') : undefined,
-    }
-
-    const historicoAtual = pacienteHistoricoDecrypted || {}
-    const now = new Date().toISOString()
-    const baseItem: Omit<HistoricoItem, 'valor'> = {
-      data: now,
-      sessao_id: id,
-      acao: 'adicionado',
-    }
-
-    const novoHistorico: PacienteHistorico = { ...historicoAtual }
-
-    if (resumo.estado_mental?.humor) {
-      novoHistorico.humor = [
-        ...(historicoAtual.humor || []),
-        { ...baseItem, valor: resumo.estado_mental.humor },
-      ]
-    }
-
-    // mudancas_positivas feed insights until aggregator AI replaces this
-    if (resumo.mudancas_padroes?.mudancas_positivas?.length) {
-      novoHistorico.insights = [
-        ...(historicoAtual.insights || []),
-        ...resumo.mudancas_padroes.mudancas_positivas.map((i) => ({ ...baseItem, valor: i })),
-      ]
-    }
-
-    if (resumo.estrategia_plano?.tarefas_novas?.length) {
-      novoHistorico.tarefas = [
-        ...(historicoAtual.tarefas || []),
-        ...resumo.estrategia_plano.tarefas_novas.map((t) => ({ ...baseItem, valor: t })),
-      ]
-    }
-
-    if (allAlertas.length > 0) {
-      novoHistorico.alertas = [
-        ...(historicoAtual.alertas || []),
-        ...allAlertas.map((a) => ({ ...baseItem, valor: a })),
-      ]
-    }
+    const fichaNova = consolidateFicha(fichaBase, acceptedPatches, id, sessao.data_hora)
+    fichaNova.consolidacao_pendente = pendente
+    const { resumo: novoResumo, historico: novoHistorico } = projectToLegacy(fichaNova, pacienteResumoDecrypted)
 
     // Atomic approve: update session + patient in a single DB transaction
     // Encrypt sensitive fields before persisting
@@ -107,6 +77,7 @@ export async function POST(
       p_paciente_id: paciente.id,
       p_paciente_resumo: encryptJsonField(novoResumo),
       p_paciente_historico: encryptJsonField(novoHistorico),
+      p_paciente_ficha: encryptJsonField(fichaNova),
     })
 
     if (rpcError) {

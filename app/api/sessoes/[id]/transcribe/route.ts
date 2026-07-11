@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, requireSessionOwner } from '@/lib/utils/auth'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { transcribeAudio } from '@/lib/transcription/groq'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/utils/rate-limit'
+import { encryptTextField } from '@/lib/supabase/encrypt'
 import { logger } from '@/lib/utils/logger'
 import { captureException } from '@/lib/utils/sentry'
+
+// Transcrição síncrona usa ffmpeg → precisa do runtime Node. 60s é o teto do
+// plano Hobby do Vercel.
+export const maxDuration = 60
+export const runtime = 'nodejs'
 
 export async function POST(
   request: NextRequest,
@@ -45,8 +51,9 @@ export async function POST(
       return NextResponse.json({ error: 'Áudio não encontrado' }, { status: 404 })
     }
 
-    // Baixar áudio do Supabase Storage
-    const { data: audioData, error: downloadError } = await db.storage
+    // Baixar áudio do Supabase Storage (bucket privado → usa admin/service_role)
+    const admin = createAdminClient()
+    const { data: audioData, error: downloadError } = await admin.storage
       .from('audio-sessoes')
       .download(sessao.audio_url)
 
@@ -66,11 +73,11 @@ export async function POST(
     logger.info('Transcription starting', { sessaoId: id, audioSizeMB: +(audioBuffer.length / 1024 / 1024).toFixed(1) })
     const result = await transcribeAudio(audioBuffer, sessao.audio_url)
 
-    // Salvar transcrição no campo integra
+    // Salvar transcrição no campo integra (criptografada at rest)
     await db
       .from('sessoes')
       .update({
-        integra: result.fullText,
+        integra: encryptTextField(result.fullText),
         recording_status: 'processing',
       })
       .eq('id', id)

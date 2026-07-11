@@ -3,6 +3,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { RecordingStatus, VideoPlataforma } from '@/lib/types'
 import { RecordingStatusIndicator } from './recording-status'
+import { createClient } from '@/lib/supabase/client'
+
+/** Bitrate do áudio gravado (opus). 32kbps é suficiente pra fala e mantém
+ *  sessões de ~50min bem abaixo do limite de 25MB do Groq — evitando split
+ *  por ffmpeg e timeouts no plano Hobby do Vercel. */
+const AUDIO_BITS_PER_SECOND = 32000
 
 interface SessionRecorderProps {
   sessaoId: string
@@ -11,6 +17,7 @@ interface SessionRecorderProps {
   processingError?: string | null
   videoLink?: string | null
   hasAudio?: boolean
+  hasTranscricao?: boolean
   videoPlataforma?: VideoPlataforma
   videoPlataformaNome?: string | null
 }
@@ -24,6 +31,7 @@ export function SessionRecorder({
   processingError: initialError,
   videoLink: initialVideoLink,
   hasAudio = false,
+  hasTranscricao = false,
   videoPlataforma = 'nenhum',
   videoPlataformaNome = null,
 }: SessionRecorderProps) {
@@ -51,74 +59,69 @@ export function SessionRecorder({
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const stoppingRef = useRef(false)
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  // Poll session status with progressive backoff (3s → 5s → 10s)
-  const startPolling = useCallback(() => {
-    if (pollRef.current) return // Already polling
-
-    setPipelineStatus('transcribing') // Show initial processing state
-
-    let attempts = 0
-
-    function scheduleNext() {
-      attempts++
-      const delay = attempts <= 5 ? 3000 : attempts <= 15 ? 5000 : 10000
-      pollRef.current = setTimeout(async () => {
-        try {
-          const res = await fetch(`/api/sessoes/${sessaoId}/status`)
-          if (!res.ok) { scheduleNext(); return }
-
-          const data = await res.json()
-          const { recording_status, processing_error } = data
-
-          if (recording_status) setPipelineStatus(recording_status)
-
-          if (recording_status === 'done') {
-            pollRef.current = null
-            setTimeout(() => window.location.reload(), 1500)
-            return
-          } else if (recording_status === 'error') {
-            pollRef.current = null
-            setError(processing_error || 'Erro no processamento')
-            return
-          }
-        } catch {
-          // Network error — keep polling, it might recover
+  // POST com retry e backoff — cobre falhas transitórias de Groq/OpenAI.
+  // Não retenta em erros 4xx definitivos (exceto 429).
+  const postWithRetry = useCallback(async (url: string, attempts = 3) => {
+    let lastErr: Error | null = null
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await fetch(url, { method: 'POST' })
+        if (res.ok) return res
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error || `Erro ${res.status}`)
         }
-        scheduleNext()
-      }, delay) as any
-    }
-
-    scheduleNext()
-  }, [sessaoId])
-
-  // Re-trigger processing for failed sessions
-  const handleReprocess = useCallback(async () => {
-    setError(null)
-    setPipelineStatus('transcribing')
-    try {
-      const res = await fetch(`/api/sessoes/${sessaoId}/reprocess`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Falha ao reprocessar')
+        lastErr = new Error(`Erro ${res.status}`)
+      } catch (err) {
+        lastErr = err instanceof Error ? err : new Error('Erro de rede')
+        // erro de aplicação (4xx) não deve retentar
+        if (lastErr.message && !/Erro 5\d\d|rede|429/.test(lastErr.message) && i === 0 && !/fetch/.test(lastErr.message)) {
+          throw lastErr
+        }
       }
-      startPolling()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao reprocessar. Tente novamente.')
-      setPipelineStatus('error')
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 2000 * (i + 1)))
     }
-  }, [sessaoId, startPolling])
+    throw lastErr || new Error('Falha após retentativas')
+  }, [])
 
-  // On mount: if session is already processing, start polling
+  /**
+   * Pipeline orquestrado pelo cliente (sem fila externa):
+   *   transcribe (Groq) → extract (OpenAI) → aguardando_aprovacao.
+   * Cada etapa é uma request própria (≤60s, cabe no Hobby do Vercel).
+   * `startFrom='extract'` retoma uma sessão que já tem transcrição.
+   */
+  const runPipeline = useCallback(
+    async (startFrom: 'transcribe' | 'extract' = 'transcribe') => {
+      setError(null)
+      try {
+        if (startFrom === 'transcribe') {
+          setPipelineStatus('transcribing')
+          await postWithRetry(`/api/sessoes/${sessaoId}/transcribe`)
+        }
+        setPipelineStatus('processing')
+        await postWithRetry(`/api/sessoes/${sessaoId}/extract`)
+        setPipelineStatus('done')
+        setTimeout(() => window.location.reload(), 1200)
+      } catch (err) {
+        setPipelineStatus('error')
+        setError(err instanceof Error ? err.message : 'Erro no processamento')
+      }
+    },
+    [sessaoId, postWithRetry]
+  )
+
+  // Botão "Reprocessar" — refaz desde a transcrição
+  const handleReprocess = useCallback(() => runPipeline('transcribe'), [runPipeline])
+
+  // Recover-on-visit: se a sessão ficou travada (aba fechada no meio do
+  // processamento ou erro anterior), retoma automaticamente ao abrir a página.
+  // Se já tem transcrição, só falta extrair; senão, refaz desde a transcrição.
   useEffect(() => {
     if (
       initialRecordingStatus &&
-      ['transcribing', 'processing', 'uploading'].includes(initialRecordingStatus)
+      ['uploading', 'transcribing', 'processing'].includes(initialRecordingStatus)
     ) {
-      startPolling()
+      runPipeline(hasTranscricao ? 'extract' : 'transcribe')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -128,7 +131,6 @@ export function SessionRecorder({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
       if (meetPollRef.current) clearInterval(meetPollRef.current)
-      if (pollRef.current) clearTimeout(pollRef.current as any)
       streamRef.current?.getTracks().forEach((t) => t.stop())
       displayStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
@@ -163,6 +165,39 @@ export function SessionRecorder({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
+  /**
+   * Upload de áudio em 3 passos (compatível com Vercel — não passa o arquivo
+   * pela função serverless, que limita o body a 4.5MB):
+   *   1. pede uma signed upload URL ao backend
+   *   2. envia o arquivo DIRETO pro Supabase Storage
+   *   3. avisa o backend (metadata) pra disparar o pipeline
+   */
+  const uploadAudio = useCallback(
+    async (file: Blob, ext: string, durationSeconds: number | null) => {
+      const urlRes = await fetch(`/api/sessoes/${sessaoId}/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ext }),
+      })
+      if (!urlRes.ok) throw new Error('Falha ao preparar upload')
+      const { path, token } = await urlRes.json()
+
+      const supabase = createClient()
+      const { error: upErr } = await supabase.storage
+        .from('audio-sessoes')
+        .uploadToSignedUrl(path, token, file)
+      if (upErr) throw new Error('Falha no upload do áudio')
+
+      const finRes = await fetch(`/api/sessoes/${sessaoId}/upload-audio`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, duration: durationSeconds }),
+      })
+      if (!finRes.ok) throw new Error('Falha ao finalizar upload')
+    },
+    [sessaoId]
+  )
+
   const stopRecording = useCallback(async () => {
     if (!mediaRecorderRef.current || stoppingRef.current) return
     stoppingRef.current = true
@@ -191,21 +226,11 @@ export function SessionRecorder({
 
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' })
 
-        // Upload audio — background processing is triggered automatically via Inngest
+        // Upload do áudio → o cliente orquestra transcribe → extract
         try {
           setPipelineStatus('uploading')
-          const uploadForm = new FormData()
-          uploadForm.append('audio', audioBlob, `sessao_${sessaoId}.webm`)
-          uploadForm.append('duration', String(duration))
-
-          const uploadRes = await fetch(`/api/sessoes/${sessaoId}/upload-audio`, {
-            method: 'POST',
-            body: uploadForm,
-          })
-          if (!uploadRes.ok) throw new Error('Falha no upload do áudio')
-
-          // Upload done — pipeline runs in background. Start polling for status.
-          startPolling()
+          await uploadAudio(audioBlob, 'webm', duration)
+          await runPipeline('transcribe')
         } catch (err) {
           setPipelineStatus('error')
           setError(err instanceof Error ? err.message : 'Erro no processamento')
@@ -217,7 +242,7 @@ export function SessionRecorder({
 
       recorder.stop()
     })
-  }, [sessaoId, startPolling])
+  }, [runPipeline, uploadAudio])
 
   const startRecording = useCallback(async (selectedMode: SessionMode) => {
     setIsStarting(true)
@@ -305,6 +330,7 @@ export function SessionRecorder({
       // 4. Iniciar MediaRecorder
       const recorder = new MediaRecorder(combinedStream, {
         mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
       })
 
       chunksRef.current = []
@@ -366,19 +392,11 @@ export function SessionRecorder({
         }
       }
 
-      // Upload — background processing is triggered automatically via Inngest
+      // Upload manual → o cliente orquestra transcribe → extract
       setPipelineStatus('uploading')
-      const uploadForm = new FormData()
-      uploadForm.append('audio', file, file.name)
-
-      const uploadRes = await fetch(`/api/sessoes/${sessaoId}/upload-audio`, {
-        method: 'POST',
-        body: uploadForm,
-      })
-      if (!uploadRes.ok) throw new Error('Falha no upload do áudio')
-
-      // Upload done — pipeline runs in background. Start polling for status.
-      startPolling()
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'webm'
+      await uploadAudio(file, ext, null)
+      await runPipeline('transcribe')
     } catch (err) {
       setPipelineStatus('error')
       setError(err instanceof Error ? err.message : 'Erro no processamento')
@@ -387,7 +405,7 @@ export function SessionRecorder({
       // Resetar input para permitir re-upload do mesmo arquivo
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
-  }, [sessaoId, status, startPolling])
+  }, [sessaoId, status, runPipeline, uploadAudio])
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
