@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Build standalone: o Dockerfile copia .next/standalone. Sem isso o build
+  // Docker falha em "COPY /app/.next/standalone: not found".
+  output: 'standalone',
   // Inclui os binários ffmpeg/ffprobe (referenciados por caminho em runtime)
   // no bundle das funções serverless do Vercel, que não têm ffmpeg instalado.
   // Só o binário linux/x64 — o runtime do Vercel é linux x64. ffprobe-static
