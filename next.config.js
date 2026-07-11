@@ -2,11 +2,13 @@
 const nextConfig = {
   // Inclui os binários ffmpeg/ffprobe (referenciados por caminho em runtime)
   // no bundle das funções serverless do Vercel, que não têm ffmpeg instalado.
+  // Só o binário linux/x64 — o runtime do Vercel é linux x64. ffprobe-static
+  // traz darwin+win32+linux (335M); incluir bin/** estourava o limite de 250M.
   experimental: {
     outputFileTracingIncludes: {
       '/api/sessoes/[id]/transcribe': [
         './node_modules/ffmpeg-static/ffmpeg',
-        './node_modules/ffprobe-static/bin/**',
+        './node_modules/ffprobe-static/bin/linux/x64/ffprobe',
       ],
     },
   },
