@@ -164,6 +164,7 @@ export default async function SessaoPage({ params }: { params: Promise<{ id: str
         processingError={sessao.processing_error || null}
         videoLink={sessao.video_link || null}
         hasAudio={!!sessao.audio_url}
+        hasTranscricao={!!sessao.integra}
         videoPlataforma={usuario?.video_plataforma || 'nenhum'}
         videoPlataformaNome={usuario?.video_plataforma_nome || null}
       />

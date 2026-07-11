@@ -1,6 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  // Inclui os binários ffmpeg/ffprobe (referenciados por caminho em runtime)
+  // no bundle das funções serverless do Vercel, que não têm ffmpeg instalado.
+  experimental: {
+    outputFileTracingIncludes: {
+      '/api/sessoes/[id]/transcribe': [
+        './node_modules/ffmpeg-static/ffmpeg',
+        './node_modules/ffprobe-static/bin/**',
+      ],
+    },
+  },
   async headers() {
     return [
       {
