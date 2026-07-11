@@ -179,6 +179,7 @@ export interface Database {
           // Conteúdo IA
           preparacao: SessaoPreparacao | null
           resumo: SessaoResumo | null
+          recomendacoes: SessaoRecomendacoes | null
           modelo_ia_usado: string | null
           // Transcrição
           integra: string | null
@@ -205,6 +206,7 @@ export interface Database {
           fathom_call_id?: string | null
           preparacao?: SessaoPreparacao | null
           resumo?: SessaoResumo | null
+          recomendacoes?: SessaoRecomendacoes | null
           modelo_ia_usado?: string | null
           integra?: string | null
           audio_url?: string | null
@@ -228,6 +230,7 @@ export interface Database {
           fathom_call_id?: string | null
           preparacao?: SessaoPreparacao | null
           resumo?: SessaoResumo | null
+          recomendacoes?: SessaoRecomendacoes | null
           modelo_ia_usado?: string | null
           integra?: string | null
           audio_url?: string | null
@@ -616,6 +619,55 @@ export interface SessaoResumo {
     marcos_vida: string | null
     historico_tratamentos: string | null
   }
+}
+
+// ===== Recomendações clínicas (apoio à decisão, geradas pós-aprovação) =====
+
+export interface RecomendacaoTecnica {
+  abordagem: string          // rótulo da escola: "TCC", "ACT", "Psicanálise", "Sistêmica"...
+  nome: string
+  descricao_curta: string
+  quando_usar: string
+}
+
+export interface HipoteseDiagnostica {
+  hipotese: string           // sempre condicional ("sinais compatíveis com...")
+  sistema: 'CID-11' | 'DSM-5'
+  sinais_observados: string[]
+  criterios_a_confirmar: string[]
+  perguntas_rastreio: string[]
+}
+
+export interface EscalaSugerida {
+  nome: string               // PHQ-9, GAD-7, etc.
+  objetivo: string
+  quando_aplicar: string
+}
+
+export interface PsicoeducacaoItem {
+  tema: string
+  descricao_curta: string
+}
+
+export interface ConducaoProximaSessao {
+  tipo: 'retomar' | 'foco' | 'pergunta' | 'tarefa'
+  conteudo: string
+}
+
+export interface AlertaClinico {
+  nivel: 'urgente' | 'monitorar'
+  descricao: string
+}
+
+export interface SessaoRecomendacoes {
+  tecnicas_sugeridas: RecomendacaoTecnica[]
+  hipoteses_diagnosticas: HipoteseDiagnostica[]
+  escalas_sugeridas: EscalaSugerida[]
+  psicoeducacao: PsicoeducacaoItem[]
+  conducao_proxima_sessao: ConducaoProximaSessao[]
+  alertas_clinicos: AlertaClinico[]
+  gerado_em: string          // ISO timestamp
+  modelo_ia_usado: string
 }
 
 // ============================================

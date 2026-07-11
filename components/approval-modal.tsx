@@ -173,6 +173,9 @@ export function ApprovalModal({
         setApproveError(data.error || 'Falha ao aprovar sessão')
         return
       }
+      // Dispara geração de recomendações em background (não bloqueia a aprovação).
+      // Falha aqui é silenciosa — a aba Recomendações oferece "Regerar".
+      fetch(`/api/sessoes/${sessaoId}/recomendacoes`, { method: 'POST' }).catch(() => {})
       onClose()
       router.refresh()
     } catch {
